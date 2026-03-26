@@ -1,5 +1,5 @@
---// Status UI | Rounded Edition
---// Monochrome + Rounded Corners
+--// Status UI | Ripple Effect Edition
+--// Click feedback animation
 
 if getgenv().StatusUI_Loaded then return end
 getgenv().StatusUI_Loaded = true
@@ -34,6 +34,32 @@ local function Tween(obj, props, duration, style, dir)
     local tween = TweenService:Create(obj, info, props)
     tween:Play()
     return tween
+end
+
+--// Ripple Effect Function
+local function Ripple(button, x, y)
+    spawn(function()
+        local ripple = Instance.new("Frame")
+        ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        ripple.BackgroundTransparency = 0.7
+        ripple.BorderSizePixel = 0
+        ripple.Position = UDim2.new(0, x - 5, 0, y - 5)
+        ripple.Size = UDim2.new(0, 10, 0, 10)
+        ripple.Parent = button
+        ripple.ZIndex = button.ZIndex + 10
+        
+        local corner = Instance.new("UICorner", ripple)
+        corner.CornerRadius = UDim.new(1, 0)
+        
+        Tween(ripple, {
+            Size = UDim2.new(0, 200, 0, 200), 
+            Position = UDim2.new(0, x - 100, 0, y - 100), 
+            BackgroundTransparency = 1
+        }, 0.6)
+        
+        wait(0.6)
+        ripple:Destroy()
+    end)
 end
 
 local function MakeDraggable(topbar, frame)
@@ -87,8 +113,6 @@ TitleBar.Size = UDim2.new(1, 0, 0, 45)
 TitleBar.BackgroundColor3 = Config.Theme.Secondary
 TitleBar.BorderSizePixel = 0
 
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 0)
-
 local TitleText = Instance.new("TextLabel", TitleBar)
 TitleText.Size = UDim2.new(1, -100, 1, 0)
 TitleText.Position = UDim2.new(0, 20, 0, 0)
@@ -99,7 +123,6 @@ TitleText.TextSize = 18
 TitleText.Font = Enum.Font.GothamBold
 TitleText.TextXAlignment = Enum.TextXAlignment.Left
 
--- Control Buttons (серые с округлением)
 local CloseBtn = Instance.new("TextButton", TitleBar)
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position = UDim2.new(1, -40, 0, 7)
@@ -109,6 +132,7 @@ CloseBtn.TextColor3 = Config.Theme.Text
 CloseBtn.TextSize = 18
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.AutoButtonColor = false
+CloseBtn.ClipsDescendants = true
 
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
 
@@ -121,6 +145,7 @@ MinimizeBtn.TextColor3 = Config.Theme.Text
 MinimizeBtn.TextSize = 18
 MinimizeBtn.Font = Enum.Font.GothamBold
 MinimizeBtn.AutoButtonColor = false
+MinimizeBtn.ClipsDescendants = true
 
 Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 8)
 
@@ -131,14 +156,11 @@ Sidebar.BackgroundColor3 = Config.Theme.Secondary
 Sidebar.BackgroundTransparency = 0.5
 Sidebar.BorderSizePixel = 0
 
-Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 0)
-
 local TabContainer = Instance.new("Frame", MainFrame)
 TabContainer.Size = UDim2.new(1, -160, 1, -45)
 TabContainer.Position = UDim2.new(0, 160, 0, 45)
 TabContainer.BackgroundTransparency = 1
 
--- Toggle Button (округлый)
 local ToggleBtn = Instance.new("TextButton", ScreenGui)
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
@@ -150,6 +172,7 @@ ToggleBtn.Font = Enum.Font.GothamBold
 ToggleBtn.Visible = false
 ToggleBtn.Active = true
 ToggleBtn.Draggable = true
+ToggleBtn.ClipsDescendants = true
 
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
@@ -182,6 +205,7 @@ local function CreateTab(name)
     TabBtn.BackgroundColor3 = Config.Theme.Secondary
     TabBtn.Text = ""
     TabBtn.AutoButtonColor = false
+    TabBtn.ClipsDescendants = true
     
     Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
     
@@ -235,7 +259,12 @@ local function CreateTab(name)
         Tween(TabText, {TextColor3 = Config.Theme.Text}, 0.2)
     end
     
-    TabBtn.MouseButton1Click:Connect(Activate)
+    TabBtn.MouseButton1Click:Connect(function(x, y)
+        local mousePos = UserInputService:GetMouseLocation()
+        local buttonPos = TabBtn.AbsolutePosition
+        Ripple(TabBtn, mousePos.X - buttonPos.X, mousePos.Y - buttonPos.Y)
+        Activate()
+    end)
     
     TabBtn.MouseEnter:Connect(function()
         if ActiveTab ~= Content then
@@ -264,8 +293,21 @@ local function CreateTab(name)
             Btn.TextSize = 14
             Btn.Font = Enum.Font.Gotham
             Btn.AutoButtonColor = false
+            Btn.ClipsDescendants = true  -- Важно для ripple эффекта
             
             Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
+            
+            -- Ripple эффект при клике
+            Btn.MouseButton1Click:Connect(function(x, y)
+                local mousePos = UserInputService:GetMouseLocation()
+                local buttonPos = Btn.AbsolutePosition
+                Ripple(Btn, mousePos.X - buttonPos.X, mousePos.Y - buttonPos.Y)
+                
+                if callback then 
+                    local success, err = pcall(callback)
+                    if not success then print("Error:", err) end
+                end
+            end)
             
             Btn.MouseEnter:Connect(function()
                 Tween(Btn, {BackgroundColor3 = Color3.fromRGB(50, 50, 50)}, 0.2)
@@ -274,13 +316,6 @@ local function CreateTab(name)
             Btn.MouseLeave:Connect(function()
                 Tween(Btn, {BackgroundColor3 = Config.Theme.Secondary}, 0.2)
             end)
-            
-            Btn.MouseButton1Click:Connect(function()
-                if callback then 
-                    local success, err = pcall(callback)
-                    if not success then print("Error:", err) end
-                end
-            end)
         end,
         
         AddToggle = function(self, text, default, callback)
@@ -288,6 +323,7 @@ local function CreateTab(name)
             ToggleFrame.Size = UDim2.new(1, 0, 0, 40)
             ToggleFrame.BackgroundColor3 = Config.Theme.Secondary
             ToggleFrame.BorderSizePixel = 0
+            ToggleFrame.ClipsDescendants = true
             
             Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 8)
             
@@ -301,13 +337,13 @@ local function CreateTab(name)
             ToggleText.Font = Enum.Font.Gotham
             ToggleText.TextXAlignment = Enum.TextXAlignment.Left
             
-            -- Switch с округлением (pill shape)
             local Switch = Instance.new("TextButton", ToggleFrame)
             Switch.Size = UDim2.new(0, 44, 0, 24)
             Switch.Position = UDim2.new(1, -60, 0.5, -12)
             Switch.BackgroundColor3 = default and Config.Theme.Text or Color3.fromRGB(60, 60, 60)
             Switch.Text = ""
             Switch.AutoButtonColor = false
+            Switch.ClipsDescendants = true
             
             Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
             
@@ -322,6 +358,9 @@ local function CreateTab(name)
             local Value = default
             
             Switch.MouseButton1Click:Connect(function()
+                -- Мини ripple для switch
+                Ripple(Switch, 22, 12)
+                
                 Value = not Value
                 local targetPos = Value and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
                 local targetColor = Value and Config.Theme.Text or Color3.fromRGB(60, 60, 60)
@@ -472,6 +511,7 @@ local function CreateTab(name)
             DropdownBtn.Size = UDim2.new(1, 0, 0, 40)
             DropdownBtn.BackgroundTransparency = 1
             DropdownBtn.Text = ""
+            DropdownBtn.ClipsDescendants = true
             
             local Label = Instance.new("TextLabel", DropdownBtn)
             Label.Size = UDim2.new(1, -50, 1, 0)
@@ -511,6 +551,7 @@ local function CreateTab(name)
                 OptionBtn.TextSize = 13
                 OptionBtn.Font = Enum.Font.Gotham
                 OptionBtn.AutoButtonColor = false
+                OptionBtn.ClipsDescendants = true
                 
                 Instance.new("UICorner", OptionBtn).CornerRadius = UDim.new(0, 6)
                 
@@ -523,6 +564,10 @@ local function CreateTab(name)
                 end)
                 
                 OptionBtn.MouseButton1Click:Connect(function()
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local btnPos = OptionBtn.AbsolutePosition
+                    Ripple(OptionBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
+                    
                     Label.Text = text .. ": " .. option
                     if callback then callback(option) end
                     DropdownBtn:Fire()
@@ -543,10 +588,14 @@ local function CreateTab(name)
     return TabData
 end
 
--- Event Handlers
+-- Event Handlers с ripple
 CloseBtn.MouseEnter:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
 CloseBtn.MouseLeave:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) end)
 CloseBtn.MouseButton1Click:Connect(function()
+    local mousePos = UserInputService:GetMouseLocation()
+    local btnPos = CloseBtn.AbsolutePosition
+    Ripple(CloseBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
+    wait(0.2)
     Tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.3)
     wait(0.3)
     ScreenGui:Destroy()
@@ -555,9 +604,19 @@ end)
 
 MinimizeBtn.MouseEnter:Connect(function() Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
 MinimizeBtn.MouseLeave:Connect(function() Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) end)
-MinimizeBtn.MouseButton1Click:Connect(ToggleUI)
+MinimizeBtn.MouseButton1Click:Connect(function()
+    local mousePos = UserInputService:GetMouseLocation()
+    local btnPos = MinimizeBtn.AbsolutePosition
+    Ripple(MinimizeBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
+    ToggleUI()
+end)
 
-ToggleBtn.MouseButton1Click:Connect(ToggleUI)
+ToggleBtn.MouseButton1Click:Connect(function()
+    local mousePos = UserInputService:GetMouseLocation()
+    local btnPos = ToggleBtn.AbsolutePosition
+    Ripple(ToggleBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
+    ToggleUI()
+end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
@@ -572,11 +631,10 @@ Tween(MainFrame, {Size = Config.Size}, 0.5, Enum.EasingStyle.Back, Enum.EasingDi
 -- Return
 local Status = { CreateTab = CreateTab, Toggle = ToggleUI }
 
--- Example (удали если не нужно)
+-- Example
 local Main = CreateTab("Main")
-Main:AddButton("Test Button", function() print("Clicked") end)
+Main:AddButton("Test Button", function() print("Clicked!") end)
 Main:AddToggle("Test Toggle", false, function(v) print(v) end)
 Main:AddSlider("Test Slider", 0, 100, 50, function(v) print(v) end)
-Main:AddDropdown("Test Dropdown", {"Option 1", "Option 2", "Option 3"}, function(v) print(v) end)
 
 return Status
