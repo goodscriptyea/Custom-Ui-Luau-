@@ -1,10 +1,9 @@
---// Atlas Status UI | Working Edition
---// URL: https://raw.githubusercontent.com/goodscriptyea/Custom-Ui-Luau-/main/WebhookTg.luau
+--// Atlas Status UI | Bugfix Edition
+--// Исправлены: Visible not valid, nil value errors
 
 if getgenv().AtlasUI_Loaded then return end
 getgenv().AtlasUI_Loaded = true
 
---// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -46,7 +45,7 @@ local AtlasStats = {
 
 --// Helper: Format Numbers
 local function FormatNumber(num)
-    if not num then return "0" end
+    if not num or type(num) ~= "number" then return "0" end
     if num >= 1000000000 then
         return string.format("%.2fB", num / 1000000000)
     elseif num >= 1000000 then
@@ -90,6 +89,7 @@ end
 
 --// Helper: HTTP Request
 local function HttpGet(url)
+    if not url then return false, nil end
     local response = nil
     local success = false
     
@@ -137,28 +137,41 @@ local function HttpGet(url)
     return success, response
 end
 
---// Get Gold
+--// Get Gold - с проверками на nil
 local function GetGold()
     local player = LocalPlayer
-    if not player or not player.PlayerGui then return 0 end
+    if not player or not player:FindFirstChild("PlayerGui") then return 0 end
     
     local total = 0
-    for _, element in ipairs(player.PlayerGui:GetDescendants()) do
-        if element.Visible and (element:IsA("ImageButton") or element:IsA("ImageLabel") or element:IsA("Frame")) then
-            local name = element.Name:lower()
-            if (name:find("raw") and name:find("gold")) or name:find("rawgold") then
-                local amount = 0
-                for _, child in ipairs(element:GetDescendants()) do
-                    if child:IsA("TextLabel") and child.Visible then
-                        local text = child.Text:gsub(",", ""):gsub(" ", "")
-                        local num = tonumber(text)
-                        if num and num > 0 then
-                            amount = num
-                            break
+    local playerGui = player.PlayerGui
+    
+    for _, element in ipairs(playerGui:GetDescendants()) do
+        if element and element:IsA("GuiObject") then
+            local success, isVisible = pcall(function() return element.Visible end)
+            if success and isVisible then
+                if element:IsA("ImageButton") or element:IsA("ImageLabel") or element:IsA("Frame") then
+                    local name = element.Name:lower()
+                    if (name:find("raw") and name:find("gold")) or name:find("rawgold") then
+                        local amount = 0
+                        for _, child in ipairs(element:GetDescendants()) do
+                            if child and child:IsA("TextLabel") then
+                                local success2, childVisible = pcall(function() return child.Visible end)
+                                if success2 and childVisible then
+                                    local success3, text = pcall(function() return child.Text end)
+                                    if success3 and text then
+                                        local cleanText = text:gsub(",", ""):gsub(" ", "")
+                                        local num = tonumber(cleanText)
+                                        if num and num > 0 then
+                                            amount = num
+                                            break
+                                        end
+                                    end
+                                end
+                            end
                         end
+                        total = total + amount
                     end
                 end
-                total = total + (amount > 0 and amount or 0)
             end
         end
     end
@@ -170,8 +183,11 @@ local function CalculateGPH()
     if #AtlasStats.History < 2 then return 0 end
     local first = AtlasStats.History[1]
     local last = AtlasStats.History[#AtlasStats.History]
+    if not first or not last then return 0 end
+    
     local hours = (last.time - first.time) / 3600
     if hours <= 0 then return 0 end
+    
     local gph = math.floor((last.gold - first.gold) / hours)
     if gph > AtlasStats.PeakGPH then
         AtlasStats.PeakGPH = gph
@@ -189,13 +205,17 @@ local function GetChartURL()
     
     for i = 1, #AtlasStats.History, step do
         local point = AtlasStats.History[i]
-        table.insert(labels, tostring(math.floor((point.time - SCRIPT_START_TIME) / 60)) .. "m")
-        table.insert(data, point.gold)
+        if point then
+            table.insert(labels, tostring(math.floor((point.time - SCRIPT_START_TIME) / 60)) .. "m")
+            table.insert(data, point.gold)
+        end
     end
     
     local last = AtlasStats.History[#AtlasStats.History]
-    table.insert(labels, "now")
-    table.insert(data, last.gold)
+    if last then
+        table.insert(labels, "now")
+        table.insert(data, last.gold)
+    end
     
     local config = {
         type = "line",
@@ -233,11 +253,13 @@ local function GetChartURL()
         }
     }
     
-    local json = HttpService:JSONEncode(config)
+    local success, json = pcall(function() return HttpService:JSONEncode(config) end)
+    if not success then return nil end
+    
     return "https://quickchart.io/chart?c=" .. UrlEncode(json) .. "&w=800&h=400&f=png"
 end
 
---// Telegram: Send Message
+--// Telegram Functions
 local function SendMsg(text)
     if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or TELEGRAM_CHAT_ID == "" then 
         return false 
@@ -248,7 +270,6 @@ local function SendMsg(text)
     return success and response and response:find('"ok":true')
 end
 
---// Telegram: Send Photo
 local function SendPhoto(photoUrl, caption)
     if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or TELEGRAM_CHAT_ID == "" then 
         return false 
@@ -263,7 +284,6 @@ local function SendPhoto(photoUrl, caption)
     return success
 end
 
---// Send Full Report
 local function SendReport()
     local current = GetGold()
     local gph = CalculateGPH()
@@ -286,28 +306,26 @@ local function SendReport()
     end
 end
 
---// Check Bot Token
 local function CheckToken()
     if TELEGRAM_BOT_TOKEN == "" then return false, "Empty token" end
     local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getMe"
     local success, response = HttpGet(url)
     if not success then return false, "HTTP Error" end
-    if response:find('"ok":true') then
+    if response and response:find('"ok":true') then
         local name = response:match('"username":"([^"]+)"')
         return true, "Bot: @" .. (name or "Unknown")
-    elseif response:find('"error_code":401') then
+    elseif response and response:find('"error_code":401') then
         return false, "Invalid token"
     end
     return false, "Error"
 end
 
---// Get Chat ID
 local function GetChatID()
     if TELEGRAM_BOT_TOKEN == "" then return nil, "No token" end
     local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getUpdates?offset=-1"
     local success, response = HttpGet(url)
     if not success then return nil, "HTTP Error" end
-    if response:find('"ok":true') then
+    if response and response:find('"ok":true') then
         local id = response:match('"chat":{"id":([-%d]+)') or response:match('"from":{"id":([-%d]+)')
         if id then return id, "Success" end
         return nil, "Send /start to bot first"
@@ -352,7 +370,10 @@ end
 local function HandleCommand(msg)
     if not msg or not msg.text then return end
     local text = msg.text
-    local chatId = tostring(msg.chat.id)
+    local chat = msg.chat
+    if not chat then return end
+    
+    local chatId = tostring(chat.id)
     
     local authorized = false
     for _, id in ipairs(TELEGRAM_CHAT_IDS) do
@@ -399,7 +420,6 @@ local function HandleCommand(msg)
     end
 end
 
---// Start Bot
 local function StartBot()
     if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or BOT_LOOP_RUNNING then return end
     BOT_LOOP_RUNNING = true
@@ -430,62 +450,46 @@ local function StartBot()
     end)
 end
 
---// UI: Tween
+--// UI Functions
 local function Tween(obj, props, duration)
-    TweenService:Create(obj, TweenInfo.new(duration or 0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), props):Play()
+    if not obj or not obj.Parent then return end
+    pcall(function()
+        TweenService:Create(obj, TweenInfo.new(duration or 0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), props):Play()
+    end)
 end
 
---// UI: Ripple
 local function Ripple(button, x, y)
+    if not button or not button.Parent then return end
     spawn(function()
-        local ripple = Instance.new("Frame")
-        ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        ripple.BackgroundTransparency = 0.7
-        ripple.BorderSizePixel = 0
-        ripple.Position = UDim2.new(0, x - 5, 0, y - 5)
-        ripple.Size = UDim2.new(0, 10, 0, 10)
-        ripple.Parent = button
-        ripple.ZIndex = button.ZIndex + 10
+        local success, ripple = pcall(function()
+            local r = Instance.new("Frame")
+            r.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            r.BackgroundTransparency = 0.7
+            r.BorderSizePixel = 0
+            r.Position = UDim2.new(0, x - 5, 0, y - 5)
+            r.Size = UDim2.new(0, 10, 0, 10)
+            r.Parent = button
+            r.ZIndex = button.ZIndex + 10
+            return r
+        end)
         
-        local corner = Instance.new("UICorner", ripple)
-        corner.CornerRadius = UDim.new(1, 0)
+        if not success or not ripple then return end
         
-        Tween(ripple, {
-            Size = UDim2.new(0, 200, 0, 200), 
-            Position = UDim2.new(0, x - 100, 0, y - 100), 
-            BackgroundTransparency = 1
-        }, 0.6)
+        pcall(function()
+            local corner = Instance.new("UICorner", ripple)
+            corner.CornerRadius = UDim.new(1, 0)
+        end)
+        
+        pcall(function()
+            Tween(ripple, {
+                Size = UDim2.new(0, 200, 0, 200), 
+                Position = UDim2.new(0, x - 100, 0, y - 100), 
+                BackgroundTransparency = 1
+            }, 0.6)
+        end)
         
         wait(0.6)
-        ripple:Destroy()
-    end)
-end
-
---// UI: Draggable
-local function MakeDraggable(topbar, frame)
-    local dragging, dragInput, dragStart, startPos
-    topbar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-        end
-    end)
-    topbar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+        pcall(function() ripple:Destroy() end)
     end)
 end
 
@@ -506,14 +510,19 @@ MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
 
-local TitleBar = Instance.new("Frame", MainFrame)
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
 TitleBar.BackgroundColor3 = Config.Theme.Secondary
 TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
 
-local TitleText = Instance.new("TextLabel", TitleBar)
+local TitleText = Instance.new("TextLabel")
+TitleText.Name = "Title"
 TitleText.Size = UDim2.new(1, -100, 1, 0)
 TitleText.Position = UDim2.new(0, 20, 0, 0)
 TitleText.BackgroundTransparency = 1
@@ -522,8 +531,10 @@ TitleText.TextColor3 = Config.Theme.Accent
 TitleText.TextSize = 18
 TitleText.Font = Enum.Font.GothamBold
 TitleText.TextXAlignment = Enum.TextXAlignment.Left
+TitleText.Parent = TitleBar
 
-local CloseBtn = Instance.new("TextButton", TitleBar)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "Close"
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position = UDim2.new(1, -40, 0, 7)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -533,9 +544,14 @@ CloseBtn.TextSize = 18
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.AutoButtonColor = false
 CloseBtn.ClipsDescendants = true
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
+CloseBtn.Parent = TitleBar
 
-local MinimizeBtn = Instance.new("TextButton", TitleBar)
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 8)
+CloseCorner.Parent = CloseBtn
+
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Name = "Minimize"
 MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 MinimizeBtn.Position = UDim2.new(1, -75, 0, 7)
 MinimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -545,21 +561,30 @@ MinimizeBtn.TextSize = 18
 MinimizeBtn.Font = Enum.Font.GothamBold
 MinimizeBtn.AutoButtonColor = false
 MinimizeBtn.ClipsDescendants = true
-Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 8)
+MinimizeBtn.Parent = TitleBar
 
-local Sidebar = Instance.new("Frame", MainFrame)
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 8)
+MinCorner.Parent = MinimizeBtn
+
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
 Sidebar.Size = UDim2.new(0, 160, 1, -45)
 Sidebar.Position = UDim2.new(0, 0, 0, 45)
 Sidebar.BackgroundColor3 = Config.Theme.Secondary
 Sidebar.BackgroundTransparency = 0.5
 Sidebar.BorderSizePixel = 0
+Sidebar.Parent = MainFrame
 
-local TabContainer = Instance.new("Frame", MainFrame)
+local TabContainer = Instance.new("Frame")
+TabContainer.Name = "TabContainer"
 TabContainer.Size = UDim2.new(1, -160, 1, -45)
 TabContainer.Position = UDim2.new(0, 160, 0, 45)
 TabContainer.BackgroundTransparency = 1
+TabContainer.Parent = MainFrame
 
-local ToggleBtn = Instance.new("TextButton", ScreenGui)
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "Toggle"
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
 ToggleBtn.BackgroundColor3 = Config.Theme.Secondary
@@ -571,7 +596,46 @@ ToggleBtn.Visible = false
 ToggleBtn.Active = true
 ToggleBtn.Draggable = true
 ToggleBtn.ClipsDescendants = true
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+ToggleBtn.Parent = ScreenGui
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(1, 0)
+ToggleCorner.Parent = ToggleBtn
+
+--// Draggable
+local function MakeDraggable(topbar, frame)
+    if not topbar or not frame then return end
+    local dragging, dragInput, dragStart, startPos
+    
+    topbar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+        end
+    end)
+    
+    topbar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            pcall(function()
+                frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+            end)
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+end
 
 MakeDraggable(TitleBar, MainFrame)
 
@@ -583,12 +647,12 @@ local function ToggleUI()
     Minimized = not Minimized
     if Minimized then
         ToggleBtn.Visible = true
-        Tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+        Tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.4)
         wait(0.4)
         MainFrame.Visible = false
     else
         MainFrame.Visible = true
-        Tween(MainFrame, {Size = Config.Size}, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        Tween(MainFrame, {Size = Config.Size}, 0.4)
         wait(0.4)
         ToggleBtn.Visible = false
     end
@@ -596,23 +660,31 @@ end
 
 --// Tab Creation
 local function CreateTab(name)
-    local TabBtn = Instance.new("TextButton", Sidebar)
+    local TabBtn = Instance.new("TextButton")
     TabBtn.Size = UDim2.new(1, -20, 0, 40)
     TabBtn.Position = UDim2.new(0, 10, 0, 10 + (#Tabs * 50))
     TabBtn.BackgroundColor3 = Config.Theme.Secondary
     TabBtn.Text = ""
     TabBtn.AutoButtonColor = false
     TabBtn.ClipsDescendants = true
-    Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
+    TabBtn.Parent = Sidebar
     
-    local Indicator = Instance.new("Frame", TabBtn)
+    local TabCorner = Instance.new("UICorner")
+    TabCorner.CornerRadius = UDim.new(0, 8)
+    TabCorner.Parent = TabBtn
+    
+    local Indicator = Instance.new("Frame")
     Indicator.Size = UDim2.new(0, 3, 0, 20)
     Indicator.Position = UDim2.new(0, 0, 0.5, -10)
     Indicator.BackgroundColor3 = Config.Theme.Accent
     Indicator.Visible = false
-    Instance.new("UICorner", Indicator).CornerRadius = UDim.new(0, 2)
+    Indicator.Parent = TabBtn
     
-    local TabText = Instance.new("TextLabel", TabBtn)
+    local IndCorner = Instance.new("UICorner")
+    IndCorner.CornerRadius = UDim.new(0, 2)
+    IndCorner.Parent = Indicator
+    
+    local TabText = Instance.new("TextLabel")
     TabText.Size = UDim2.new(1, -20, 1, 0)
     TabText.Position = UDim2.new(0, 15, 0, 0)
     TabText.BackgroundTransparency = 1
@@ -621,8 +693,10 @@ local function CreateTab(name)
     TabText.TextSize = 14
     TabText.Font = Enum.Font.GothamSemibold
     TabText.TextXAlignment = Enum.TextXAlignment.Left
+    TabText.Parent = TabBtn
     
-    local Content = Instance.new("ScrollingFrame", TabContainer)
+    local Content = Instance.new("ScrollingFrame")
+    Content.Name = name .. "Content"
     Content.Size = UDim2.new(1, -20, 1, -20)
     Content.Position = UDim2.new(0, 10, 0, 10)
     Content.BackgroundTransparency = 1
@@ -630,28 +704,36 @@ local function CreateTab(name)
     Content.ScrollBarImageColor3 = Config.Theme.Accent
     Content.Visible = false
     Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Content.Parent = TabContainer
     
-    local UIList = Instance.new("UIListLayout", Content)
+    local UIList = Instance.new("UIListLayout")
     UIList.Padding = UDim.new(0, 10)
+    UIList.Parent = Content
     
     local function Activate()
         if ActiveTab == Content then return end
         if ActiveTab then ActiveTab.Visible = false end
         
         for _, tab in pairs(Tabs) do
-            tab.Indicator.Visible = false
-            Tween(tab.Button, {BackgroundColor3 = Config.Theme.Secondary}, 0.2)
-            Tween(tab.Text, {TextColor3 = Config.Theme.SubText}, 0.2)
+            if tab.Indicator and tab.Indicator.Parent then
+                tab.Indicator.Visible = false
+            end
+            if tab.Button and tab.Button.Parent then
+                Tween(tab.Button, {BackgroundColor3 = Config.Theme.Secondary}, 0.2)
+            end
+            if tab.Text and tab.Text.Parent then
+                tab.Text.TextColor3 = Config.Theme.SubText
+            end
         end
         
         ActiveTab = Content
         Content.Visible = true
         Indicator.Visible = true
         Tween(TabBtn, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}, 0.3)
-        Tween(TabText, {TextColor3 = Config.Theme.Text}, 0.2)
+        TabText.TextColor3 = Config.Theme.Text
     end
     
-    TabBtn.MouseButton1Click:Connect(function(x, y)
+    TabBtn.MouseButton1Click:Connect(function()
         local mousePos = UserInputService:GetMouseLocation()
         local buttonPos = TabBtn.AbsolutePosition
         Ripple(TabBtn, mousePos.X - buttonPos.X, mousePos.Y - buttonPos.Y)
@@ -677,7 +759,7 @@ local function CreateTab(name)
         Text = TabText,
         
         AddButton = function(self, text, callback)
-            local Btn = Instance.new("TextButton", Content)
+            local Btn = Instance.new("TextButton")
             Btn.Size = UDim2.new(1, 0, 0, 40)
             Btn.BackgroundColor3 = Config.Theme.Secondary
             Btn.Text = text
@@ -686,9 +768,13 @@ local function CreateTab(name)
             Btn.Font = Enum.Font.Gotham
             Btn.AutoButtonColor = false
             Btn.ClipsDescendants = true
-            Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
+            Btn.Parent = Content
             
-            Btn.MouseButton1Click:Connect(function(x, y)
+            local BtnCorner = Instance.new("UICorner")
+            BtnCorner.CornerRadius = UDim.new(0, 8)
+            BtnCorner.Parent = Btn
+            
+            Btn.MouseButton1Click:Connect(function()
                 local mousePos = UserInputService:GetMouseLocation()
                 local buttonPos = Btn.AbsolutePosition
                 Ripple(Btn, mousePos.X - buttonPos.X, mousePos.Y - buttonPos.Y)
@@ -707,12 +793,16 @@ local function CreateTab(name)
         end,
         
         AddToggle = function(self, text, default, callback)
-            local Frame = Instance.new("Frame", Content)
+            local Frame = Instance.new("Frame")
             Frame.Size = UDim2.new(1, 0, 0, 40)
             Frame.BackgroundColor3 = Config.Theme.Secondary
-            Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+            Frame.Parent = Content
             
-            local Label = Instance.new("TextLabel", Frame)
+            local FrameCorner = Instance.new("UICorner")
+            FrameCorner.CornerRadius = UDim.new(0, 8)
+            FrameCorner.Parent = Frame
+            
+            local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, -70, 1, 0)
             Label.Position = UDim2.new(0, 15, 0, 0)
             Label.BackgroundTransparency = 1
@@ -721,19 +811,28 @@ local function CreateTab(name)
             Label.TextSize = 14
             Label.Font = Enum.Font.Gotham
             Label.TextXAlignment = Enum.TextXAlignment.Left
+            Label.Parent = Frame
             
-            local Switch = Instance.new("TextButton", Frame)
+            local Switch = Instance.new("TextButton")
             Switch.Size = UDim2.new(0, 44, 0, 24)
             Switch.Position = UDim2.new(1, -60, 0.5, -12)
             Switch.BackgroundColor3 = default and Config.Theme.Accent or Color3.fromRGB(60, 60, 60)
             Switch.Text = ""
-            Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
+            Switch.Parent = Frame
             
-            local Circle = Instance.new("Frame", Switch)
+            local SwitchCorner = Instance.new("UICorner")
+            SwitchCorner.CornerRadius = UDim.new(1, 0)
+            SwitchCorner.Parent = Switch
+            
+            local Circle = Instance.new("Frame")
             Circle.Size = UDim2.new(0, 18, 0, 18)
             Circle.Position = default and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
             Circle.BackgroundColor3 = Config.Theme.Background
-            Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
+            Circle.Parent = Switch
+            
+            local CircleCorner = Instance.new("UICorner")
+            CircleCorner.CornerRadius = UDim.new(1, 0)
+            CircleCorner.Parent = Circle
             
             local Value = default
             
@@ -748,12 +847,16 @@ local function CreateTab(name)
         end,
         
         AddTextBox = function(self, text, placeholder, callback, isPassword)
-            local BoxFrame = Instance.new("Frame", Content)
+            local BoxFrame = Instance.new("Frame")
             BoxFrame.Size = UDim2.new(1, 0, 0, 70)
             BoxFrame.BackgroundColor3 = Config.Theme.Secondary
-            Instance.new("UICorner", BoxFrame).CornerRadius = UDim.new(0, 8)
+            BoxFrame.Parent = Content
             
-            local Label = Instance.new("TextLabel", BoxFrame)
+            local BoxCorner = Instance.new("UICorner")
+            BoxCorner.CornerRadius = UDim.new(0, 8)
+            BoxCorner.Parent = BoxFrame
+            
+            local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, -20, 0, 25)
             Label.Position = UDim2.new(0, 15, 0, 5)
             Label.BackgroundTransparency = 1
@@ -762,8 +865,9 @@ local function CreateTab(name)
             Label.TextSize = 14
             Label.Font = Enum.Font.Gotham
             Label.TextXAlignment = Enum.TextXAlignment.Left
+            Label.Parent = BoxFrame
             
-            local TextBox = Instance.new("TextBox", BoxFrame)
+            local TextBox = Instance.new("TextBox")
             TextBox.Size = UDim2.new(1, -30, 0, 30)
             TextBox.Position = UDim2.new(0, 15, 0, 35)
             TextBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -776,7 +880,11 @@ local function CreateTab(name)
             if isPassword then
                 TextBox.TextInputType = Enum.TextInputType.Password
             end
-            Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 6)
+            TextBox.Parent = BoxFrame
+            
+            local TBCorner = Instance.new("UICorner")
+            TBCorner.CornerRadius = UDim.new(0, 6)
+            TBCorner.Parent = TextBox
             
             TextBox.FocusLost:Connect(function()
                 if callback then
@@ -788,7 +896,7 @@ local function CreateTab(name)
         end,
         
         AddLabel = function(self, text, color)
-            local Label = Instance.new("TextLabel", Content)
+            local Label = Instance.new("TextLabel")
             Label.Size = UDim2.new(1, 0, 0, 20)
             Label.BackgroundTransparency = 1
             Label.Text = text
@@ -796,6 +904,7 @@ local function CreateTab(name)
             Label.TextSize = 12
             Label.Font = Enum.Font.Gotham
             Label.TextXAlignment = Enum.TextXAlignment.Left
+            Label.Parent = Content
             return Label
         end
     }
@@ -806,17 +915,29 @@ local function CreateTab(name)
 end
 
 --// Event Handlers
-CloseBtn.MouseEnter:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
-CloseBtn.MouseLeave:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) end)
+CloseBtn.MouseEnter:Connect(function() 
+    Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) 
+end)
+
+CloseBtn.MouseLeave:Connect(function() 
+    Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) 
+end)
+
 CloseBtn.MouseButton1Click:Connect(function()
     Tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.3)
     wait(0.3)
-    ScreenGui:Destroy()
+    pcall(function() ScreenGui:Destroy() end)
     getgenv().AtlasUI_Loaded = false
 end)
 
-MinimizeBtn.MouseEnter:Connect(function() Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
-MinimizeBtn.MouseLeave:Connect(function() Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) end)
+MinimizeBtn.MouseEnter:Connect(function() 
+    Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) 
+end)
+
+MinimizeBtn.MouseLeave:Connect(function() 
+    Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) 
+end)
+
 MinimizeBtn.MouseButton1Click:Connect(ToggleUI)
 ToggleBtn.MouseButton1Click:Connect(ToggleUI)
 
@@ -901,7 +1022,7 @@ TelegramTab:AddToggle("Enable Bot", TELEGRAM_ENABLED, function(state)
     if state and TELEGRAM_BOT_TOKEN ~= "" then
         StartBot()
         if TELEGRAM_CHAT_ID ~= "" then
-            SendMsg("✅ *Atlas Connected!*\nPlayer: `" .. LocalPlayer.Name .. "`")
+            SendMsg("✅ *Atlas Connected!*")
         end
         StarterGui:SetCore("SendNotification", {Title = "Telegram", Text = "Started!", Duration = 3})
     end
@@ -920,7 +1041,7 @@ TelegramTab:AddLabel("Commands: /start, /gold, /stats, /gph, /chart")
 --// Data Collection
 task.spawn(function()
     while true do
-        task.wait(300) -- 5 min
+        task.wait(300)
         local current = GetGold()
         table.insert(AtlasStats.History, {
             time = tick(),
@@ -940,10 +1061,9 @@ end
 
 --// Show UI
 MainFrame.Visible = true
-Tween(MainFrame, {Size = Config.Size}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+Tween(MainFrame, {Size = Config.Size}, 0.5)
 
 print("✅ Atlas UI Loaded!")
-print("Commands: /stats for graph report")
 
 getgenv().AtlasUI = {
     SendReport = SendReport,
