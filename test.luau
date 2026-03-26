@@ -1,9 +1,10 @@
---// Status UI | Atlas Edition + Telegram Graph Integration
---// Raw URL: https://raw.githubusercontent.com/goodscriptyea/Custom-Ui-Luau-/main/WebhookTg.luau
+--// Atlas Status UI | Working Edition
+--// URL: https://raw.githubusercontent.com/goodscriptyea/Custom-Ui-Luau-/main/WebhookTg.luau
 
-if getgenv().StatusUI_Loaded then return end
-getgenv().StatusUI_Loaded = true
+if getgenv().AtlasUI_Loaded then return end
+getgenv().AtlasUI_Loaded = true
 
+--// Services
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -16,46 +17,425 @@ local LocalPlayer = Players.LocalPlayer
 --// Config
 local Config = {
     Title = "ATLAS STATUS",
-    Size = UDim2.new(0, 650, 0, 450),
-    Position = UDim2.new(0.5, -325, 0.5, -225),
+    Size = UDim2.new(0, 600, 0, 400),
+    Position = UDim2.new(0.5, -300, 0.5, -200),
     Theme = {
         Background = Color3.fromRGB(10, 10, 10),
         Secondary = Color3.fromRGB(20, 20, 20),
         Accent = Color3.fromRGB(255, 215, 0),
         Text = Color3.fromRGB(255, 255, 255),
-        SubText = Color3.fromRGB(120, 120, 120),
-        Border = Color3.fromRGB(40, 40, 40)
+        SubText = Color3.fromRGB(120, 120, 120)
     }
 }
 
---// Telegram Config
+--// State
 local TELEGRAM_ENABLED = false
 local TELEGRAM_BOT_TOKEN = ""
 local TELEGRAM_CHAT_ID = ""
 local TELEGRAM_CHAT_IDS = {}
-local PLAYER_NAME = LocalPlayer.Name or "Player"
 local SCRIPT_START_TIME = tick()
 local BOT_LOOP_RUNNING = false
 local LAST_UPDATE_ID = 0
 
---// Atlas Statistics
+--// Stats
 local AtlasStats = {
     History = {},
     StartGold = 0,
-    PeakGPH = 0,
-    DataEnabled = true
+    PeakGPH = 0
 }
 
---// Helper Functions
-local function Tween(obj, props, duration, style, dir)
-    style = style or Enum.EasingStyle.Quart
-    dir = dir or Enum.EasingDirection.Out
-    local info = TweenInfo.new(duration or 0.3, style, dir)
-    local tween = TweenService:Create(obj, info, props)
-    tween:Play()
-    return tween
+--// Helper: Format Numbers
+local function FormatNumber(num)
+    if not num then return "0" end
+    if num >= 1000000000 then
+        return string.format("%.2fB", num / 1000000000)
+    elseif num >= 1000000 then
+        return string.format("%.2fM", num / 1000000)
+    elseif num >= 1000 then
+        return string.format("%.1fK", num / 1000)
+    end
+    return tostring(math.floor(num))
 end
 
+--// Helper: Format Time
+local function FormatTime()
+    local elapsed = tick() - SCRIPT_START_TIME
+    local hrs = math.floor(elapsed / 3600)
+    local mins = math.floor((elapsed % 3600) / 60)
+    local secs = math.floor(elapsed % 60)
+    return string.format("%02d:%02d:%02d", hrs, mins, secs)
+end
+
+--// Helper: URL Encode
+local function UrlEncode(str)
+    if not str then return "" end
+    str = tostring(str)
+    str = str:gsub("\r\n", "\n"):gsub("\r", "\n")
+    local encoded = ""
+    for i = 1, #str do
+        local c = str:sub(i, i)
+        local byte = string.byte(c)
+        if (byte >= 48 and byte <= 57) or (byte >= 65 and byte <= 90) or (byte >= 97 and byte <= 122) or c == "-" or c == "_" or c == "." or c == "~" then
+            encoded = encoded .. c
+        elseif c == "\n" then
+            encoded = encoded .. "%0A"
+        elseif c == " " then
+            encoded = encoded .. "+"
+        else
+            encoded = encoded .. string.format("%%%02X", byte)
+        end
+    end
+    return encoded
+end
+
+--// Helper: HTTP Request
+local function HttpGet(url)
+    local response = nil
+    local success = false
+    
+    pcall(function()
+        if syn and syn.request then
+            local r = syn.request({Url = url, Method = "GET"})
+            if r and r.Body then
+                response = r.Body
+                success = true
+            end
+        end
+    end)
+    
+    if not success then
+        pcall(function()
+            if http_request then
+                local r = http_request({Url = url, Method = "GET"})
+                if r and r.Body then
+                    response = r.Body
+                    success = true
+                end
+            end
+        end)
+    end
+    
+    if not success then
+        pcall(function()
+            if request then
+                local r = request({Url = url, Method = "GET"})
+                if r and r.Body then
+                    response = r.Body
+                    success = true
+                end
+            end
+        end)
+    end
+    
+    if not success then
+        pcall(function()
+            response = HttpService:GetAsync(url)
+            success = true
+        end)
+    end
+    
+    return success, response
+end
+
+--// Get Gold
+local function GetGold()
+    local player = LocalPlayer
+    if not player or not player.PlayerGui then return 0 end
+    
+    local total = 0
+    for _, element in ipairs(player.PlayerGui:GetDescendants()) do
+        if element.Visible and (element:IsA("ImageButton") or element:IsA("ImageLabel") or element:IsA("Frame")) then
+            local name = element.Name:lower()
+            if (name:find("raw") and name:find("gold")) or name:find("rawgold") then
+                local amount = 0
+                for _, child in ipairs(element:GetDescendants()) do
+                    if child:IsA("TextLabel") and child.Visible then
+                        local text = child.Text:gsub(",", ""):gsub(" ", "")
+                        local num = tonumber(text)
+                        if num and num > 0 then
+                            amount = num
+                            break
+                        end
+                    end
+                end
+                total = total + (amount > 0 and amount or 0)
+            end
+        end
+    end
+    return total
+end
+
+--// Calculate GPH
+local function CalculateGPH()
+    if #AtlasStats.History < 2 then return 0 end
+    local first = AtlasStats.History[1]
+    local last = AtlasStats.History[#AtlasStats.History]
+    local hours = (last.time - first.time) / 3600
+    if hours <= 0 then return 0 end
+    local gph = math.floor((last.gold - first.gold) / hours)
+    if gph > AtlasStats.PeakGPH then
+        AtlasStats.PeakGPH = gph
+    end
+    return gph
+end
+
+--// Generate Chart URL
+local function GetChartURL()
+    if #AtlasStats.History < 2 then return nil end
+    
+    local labels = {}
+    local data = {}
+    local step = math.max(1, math.floor(#AtlasStats.History / 10))
+    
+    for i = 1, #AtlasStats.History, step do
+        local point = AtlasStats.History[i]
+        table.insert(labels, tostring(math.floor((point.time - SCRIPT_START_TIME) / 60)) .. "m")
+        table.insert(data, point.gold)
+    end
+    
+    local last = AtlasStats.History[#AtlasStats.History]
+    table.insert(labels, "now")
+    table.insert(data, last.gold)
+    
+    local config = {
+        type = "line",
+        data = {
+            labels = labels,
+            datasets = {{
+                label = "Gold",
+                data = data,
+                borderColor = "rgb(255, 215, 0)",
+                backgroundColor = "rgba(255, 215, 0, 0.2)",
+                borderWidth = 3,
+                fill = true,
+                tension = 0.4
+            }}
+        },
+        options = {
+            title = {
+                display = true,
+                text = "Gold Progress | " .. LocalPlayer.Name,
+                fontColor = "#ffd700",
+                fontSize = 18
+            },
+            legend = {display = false},
+            scales = {
+                yAxes = {{
+                    ticks = {fontColor = "#ffffff"},
+                    gridLines = {color = "rgba(255,255,255,0.1)"}
+                }},
+                xAxes = {{
+                    ticks = {fontColor = "#ffffff"},
+                    gridLines = {color = "rgba(255,255,255,0.05)"}
+                }}
+            },
+            backgroundColor = "#0a0a0a"
+        }
+    }
+    
+    local json = HttpService:JSONEncode(config)
+    return "https://quickchart.io/chart?c=" .. UrlEncode(json) .. "&w=800&h=400&f=png"
+end
+
+--// Telegram: Send Message
+local function SendMsg(text)
+    if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or TELEGRAM_CHAT_ID == "" then 
+        return false 
+    end
+    
+    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(TELEGRAM_CHAT_ID) .. "&text=" .. UrlEncode(text) .. "&parse_mode=Markdown"
+    local success, response = HttpGet(url)
+    return success and response and response:find('"ok":true')
+end
+
+--// Telegram: Send Photo
+local function SendPhoto(photoUrl, caption)
+    if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or TELEGRAM_CHAT_ID == "" then 
+        return false 
+    end
+    
+    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendPhoto?chat_id=" .. UrlEncode(TELEGRAM_CHAT_ID) .. "&photo=" .. UrlEncode(photoUrl) .. "&caption=" .. UrlEncode(caption) .. "&parse_mode=Markdown"
+    local success, response = HttpGet(url)
+    
+    if not success then
+        SendMsg(caption .. "\n\n[Graph failed]")
+    end
+    return success
+end
+
+--// Send Full Report
+local function SendReport()
+    local current = GetGold()
+    local gph = CalculateGPH()
+    local earned = current - AtlasStats.StartGold
+    
+    local text = "📊 *ATLAS REPORT*\n\n"
+    text = text .. "👤 Player: `" .. LocalPlayer.Name .. "`\n"
+    text = text .. "⏱ Time: `" .. FormatTime() .. "`\n\n"
+    text = text .. "💰 Gold: `" .. FormatNumber(current) .. "`\n"
+    text = text .. "📈 Earned: `+" .. FormatNumber(earned) .. "`\n"
+    text = text .. "⚡ GPH: `" .. FormatNumber(gph) .. "/h`\n"
+    text = text .. "🏆 Peak: `" .. FormatNumber(AtlasStats.PeakGPH) .. "/h`\n\n"
+    text = text .. "_Updated: " .. os.date("%H:%M:%S") .. "_"
+    
+    local chart = GetChartURL()
+    if chart then
+        SendPhoto(chart, text)
+    else
+        SendMsg(text)
+    end
+end
+
+--// Check Bot Token
+local function CheckToken()
+    if TELEGRAM_BOT_TOKEN == "" then return false, "Empty token" end
+    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getMe"
+    local success, response = HttpGet(url)
+    if not success then return false, "HTTP Error" end
+    if response:find('"ok":true') then
+        local name = response:match('"username":"([^"]+)"')
+        return true, "Bot: @" .. (name or "Unknown")
+    elseif response:find('"error_code":401') then
+        return false, "Invalid token"
+    end
+    return false, "Error"
+end
+
+--// Get Chat ID
+local function GetChatID()
+    if TELEGRAM_BOT_TOKEN == "" then return nil, "No token" end
+    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getUpdates?offset=-1"
+    local success, response = HttpGet(url)
+    if not success then return nil, "HTTP Error" end
+    if response:find('"ok":true') then
+        local id = response:match('"chat":{"id":([-%d]+)') or response:match('"from":{"id":([-%d]+)')
+        if id then return id, "Success" end
+        return nil, "Send /start to bot first"
+    end
+    return nil, "Invalid token"
+end
+
+--// Save/Load
+local function SaveSettings()
+    pcall(function()
+        if not isfolder("AtlasUI") then
+            makefolder("AtlasUI")
+        end
+        local data = {
+            token = TELEGRAM_BOT_TOKEN,
+            chat = TELEGRAM_CHAT_ID,
+            chats = TELEGRAM_CHAT_IDS,
+            enabled = TELEGRAM_ENABLED,
+            startGold = AtlasStats.StartGold
+        }
+        writefile("AtlasUI/config.json", HttpService:JSONEncode(data))
+    end)
+end
+
+local function LoadSettings()
+    pcall(function()
+        if readfile then
+            local content = readfile("AtlasUI/config.json")
+            if content then
+                local data = HttpService:JSONDecode(content)
+                TELEGRAM_BOT_TOKEN = data.token or ""
+                TELEGRAM_CHAT_ID = data.chat or ""
+                TELEGRAM_CHAT_IDS = data.chats or {}
+                TELEGRAM_ENABLED = data.enabled or false
+                AtlasStats.StartGold = data.startGold or 0
+            end
+        end
+    end)
+end
+
+--// Bot Handler
+local function HandleCommand(msg)
+    if not msg or not msg.text then return end
+    local text = msg.text
+    local chatId = tostring(msg.chat.id)
+    
+    local authorized = false
+    for _, id in ipairs(TELEGRAM_CHAT_IDS) do
+        if tostring(id) == chatId then authorized = true break end
+    end
+    
+    if text == "/start" and not authorized then
+        table.insert(TELEGRAM_CHAT_IDS, chatId)
+        SaveSettings()
+        authorized = true
+    end
+    
+    if not authorized then return end
+    
+    if text == "/start" then
+        local gold = GetGold()
+        local gph = CalculateGPH()
+        local msgText = "🎮 *Atlas Dashboard*\n\nPlayer: `" .. LocalPlayer.Name .. "`\nGold: `" .. FormatNumber(gold) .. "`\nGPH: `" .. FormatNumber(gph) .. "/h`\n\nCommands:\n/start, /gold, /stats, /gph, /chart"
+        local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(chatId) .. "&text=" .. UrlEncode(msgText) .. "&parse_mode=Markdown"
+        HttpGet(url)
+        
+    elseif text == "/gold" then
+        local gold = GetGold()
+        local gph = CalculateGPH()
+        local msgText = "💰 *Gold*\nAmount: `" .. FormatNumber(gold) .. "`\nGPH: `" .. FormatNumber(gph) .. "/h`"
+        local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(chatId) .. "&text=" .. UrlEncode(msgText) .. "&parse_mode=Markdown"
+        HttpGet(url)
+        
+    elseif text == "/stats" then
+        SendReport()
+        
+    elseif text == "/gph" then
+        local gph = CalculateGPH()
+        local msgText = "⚡ *GPH*\nCurrent: `" .. FormatNumber(gph) .. "/h`\nPeak: `" .. FormatNumber(AtlasStats.PeakGPH) .. "/h`"
+        local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(chatId) .. "&text=" .. UrlEncode(msgText) .. "&parse_mode=Markdown"
+        HttpGet(url)
+        
+    elseif text == "/chart" then
+        local chart = GetChartURL()
+        if chart then
+            local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendPhoto?chat_id=" .. UrlEncode(chatId) .. "&photo=" .. UrlEncode(chart)
+            HttpGet(url)
+        end
+    end
+end
+
+--// Start Bot
+local function StartBot()
+    if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or BOT_LOOP_RUNNING then return end
+    BOT_LOOP_RUNNING = true
+    
+    task.spawn(function()
+        while TELEGRAM_ENABLED do
+            local offset = LAST_UPDATE_ID + 1
+            local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getUpdates?offset=" .. tostring(offset) .. "&timeout=1"
+            local success, response = HttpGet(url)
+            
+            if success and response then
+                local ok, data = pcall(function() return HttpService:JSONDecode(response) end)
+                if ok and data and data.ok and data.result then
+                    for _, update in ipairs(data.result) do
+                        if update.update_id then
+                            LAST_UPDATE_ID = math.max(LAST_UPDATE_ID, update.update_id)
+                        end
+                        if update.message then
+                            pcall(function() HandleCommand(update.message) end)
+                        end
+                    end
+                end
+            end
+            
+            task.wait(2)
+        end
+        BOT_LOOP_RUNNING = false
+    end)
+end
+
+--// UI: Tween
+local function Tween(obj, props, duration)
+    TweenService:Create(obj, TweenInfo.new(duration or 0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), props):Play()
+end
+
+--// UI: Ripple
 local function Ripple(button, x, y)
     spawn(function()
         local ripple = Instance.new("Frame")
@@ -81,555 +461,7 @@ local function Ripple(button, x, y)
     end)
 end
 
-local function UrlEncode(str)
-    str = tostring(str)
-    str = str:gsub("\r\n", "\n")
-    str = str:gsub("\r", "\n")
-    
-    local encoded = ""
-    for i = 1, #str do
-        local c = str:sub(i, i)
-        local byte = string.byte(c)
-        
-        if (byte >= 48 and byte <= 57) or 
-           (byte >= 65 and byte <= 90) or 
-           (byte >= 97 and byte <= 122) or 
-           c == "-" or c == "_" or c == "." or c == "~" then
-            encoded = encoded .. c
-        elseif c == "\n" then
-            encoded = encoded .. "%0A"
-        elseif c == " " then
-            encoded = encoded .. "+"
-        else
-            encoded = encoded .. string.format("%%%02X", byte)
-        end
-    end
-    return encoded
-end
-
-local function MakeHttpRequest(url)
-    local response = nil
-    local success = false
-    
-    if http_request then
-        pcall(function()
-            local r = http_request({ Url = url, Method = "GET" })
-            if r and r.Body then
-                response = r.Body
-                success = true
-            end
-        end)
-    end
-    
-    if not success and syn and syn.request then
-        pcall(function()
-            local r = syn.request({ Url = url, Method = "GET" })
-            if r and r.Body then
-                response = r.Body
-                success = true
-            end
-        end)
-    end
-    
-    if not success and request then
-        pcall(function()
-            local r = request({ Url = url, Method = "GET" })
-            if r and r.Body then
-                response = r.Body
-                success = true
-            end
-        end)
-    end
-    
-    if not success then
-        pcall(function()
-            response = HttpService:GetAsync(url)
-            success = true
-        end)
-    end
-    
-    return success, response
-end
-
-local function FormatUptime()
-    local elapsed = tick() - SCRIPT_START_TIME
-    local hours = math.floor(elapsed / 3600)
-    local minutes = math.floor((elapsed % 3600) / 60)
-    local seconds = math.floor(elapsed % 60)
-    return string.format("%02d:%02d:%02d", hours, minutes, seconds)
-end
-
-local function FormatAtlasNumber(num)
-    if num >= 1000000000 then
-        return string.format("%.2fB", num / 1000000000)
-    elseif num >= 1000000 then
-        return string.format("%.2fM", num / 1000000)
-    elseif num >= 1000 then
-        return string.format("%.1fK", num / 1000)
-    end
-    return tostring(math.floor(num))
-end
-
---// Get Raw Gold Amount
-local cachedRawGold = 0
-local lastGoldCheck = 0
-
-local function GetRawGoldAmount()
-    local currentTime = tick()
-    if currentTime - lastGoldCheck < 2 then
-        return cachedRawGold
-    end
-    lastGoldCheck = currentTime
-    
-    local player = LocalPlayer
-    if not player or not player.PlayerGui then 
-        return 0
-    end
-    
-    local totalRawGold = 0
-    
-    for _, element in ipairs(player.PlayerGui:GetDescendants()) do
-        if (element:IsA("ImageButton") or element:IsA("ImageLabel") or element:IsA("Frame")) and element.Visible then
-            local elementName = element.Name:lower()
-            local isRawGold = false
-            
-            if (elementName:find("raw") and elementName:find("gold")) or elementName:find("rawgold") then
-                isRawGold = true
-            end
-            
-            if isRawGold then
-                local amount = 0
-                for _, child in ipairs(element:GetDescendants()) do
-                    if child:IsA("TextLabel") and child.Visible then
-                        local text = child.Text:gsub(",", ""):gsub(" ", "")
-                        if not text:lower():find("raw") and not text:lower():find("gold") then
-                            local num = tonumber(text)
-                            if num and num > 0 then
-                                amount = num
-                                break
-                            end
-                        end
-                    end
-                end
-                if amount == 0 then amount = 1 end
-                totalRawGold = totalRawGold + amount
-            end
-        end
-    end
-    
-    cachedRawGold = totalRawGold
-    return totalRawGold
-end
-
---// Atlas Statistics Functions
-local function CalculateGPH()
-    if #AtlasStats.History < 2 then return 0 end
-    
-    local firstPoint = AtlasStats.History[1]
-    local lastPoint = AtlasStats.History[#AtlasStats.History]
-    
-    local timeDiffHours = (lastPoint.timestamp - firstPoint.timestamp) / 3600
-    local goldDiff = lastPoint.gold - firstPoint.gold
-    
-    if timeDiffHours <= 0 then return 0 end
-    
-    local gph = math.floor(goldDiff / timeDiffHours)
-    if gph > AtlasStats.PeakGPH then
-        AtlasStats.PeakGPH = gph
-    end
-    
-    return gph
-end
-
-local function GetAverageGPH()
-    if #AtlasStats.History < 2 then return 0 end
-    
-    local totalGPH = 0
-    local validPoints = 0
-    
-    for i = 2, #AtlasStats.History do
-        local timeDiff = (AtlasStats.History[i].timestamp - AtlasStats.History[i-1].timestamp) / 3600
-        local goldDiff = AtlasStats.History[i].gold - AtlasStats.History[i-1].gold
-        
-        if timeDiff > 0 then
-            totalGPH = totalGPH + (goldDiff / timeDiff)
-            validPoints = validPoints + 1
-        end
-    end
-    
-    return validPoints > 0 and math.floor(totalGPH / validPoints) or 0
-end
-
-local function GenerateAtlasChart()
-    if #AtlasStats.History < 2 then return nil end
-    
-    local labels = {}
-    local dataPoints = {}
-    
-    local step = math.max(1, math.floor(#AtlasStats.History / 12))
-    
-    for i = 1, #AtlasStats.History, step do
-        local point = AtlasStats.History[i]
-        local minutes = math.floor((point.timestamp - SCRIPT_START_TIME) / 60)
-        table.insert(labels, tostring(minutes) .. "m")
-        table.insert(dataPoints, point.gold)
-    end
-    
-    local last = AtlasStats.History[#AtlasStats.History]
-    local lastMins = math.floor((last.timestamp - SCRIPT_START_TIME) / 60)
-    if labels[#labels] ~= tostring(lastMins) .. "m" then
-        table.insert(labels, tostring(lastMins) .. "m")
-        table.insert(dataPoints, last.gold)
-    end
-    
-    local chartConfig = {
-        type = "line",
-        data = {
-            labels = labels,
-            datasets = {{
-                label = "Gold",
-                data = dataPoints,
-                borderColor = "rgb(255, 215, 0)",
-                backgroundColor = "rgba(255, 215, 0, 0.2)",
-                borderWidth = 4,
-                pointRadius = 5,
-                pointBackgroundColor = "rgb(255, 255, 255)",
-                pointBorderColor = "rgb(255, 215, 0)",
-                fill = true,
-                tension = 0.4
-            }}
-        },
-        options = {
-            title = {
-                display = true,
-                text = "Gold Farming | " .. PLAYER_NAME,
-                fontSize = 20,
-                fontColor = "#ffd700"
-            },
-            legend = {display = false},
-            scales = {
-                yAxes = {{
-                    ticks = {
-                        fontColor = "#cccccc",
-                        callback = "function(value) { if(value >= 1000000) return (value/1000000).toFixed(1) + 'M'; if(value >= 1000) return (value/1000).toFixed(1) + 'K'; return value; }"
-                    },
-                    gridLines = {color = "rgba(255,215,0,0.1)"}
-                }},
-                xAxes = {{
-                    ticks = {fontColor = "#cccccc"},
-                    gridLines = {color = "rgba(255,255,255,0.05)"}
-                }]
-            },
-            backgroundColor = "#0a0a0a"
-        }
-    }
-    
-    local jsonConfig = HttpService:JSONEncode(chartConfig)
-    return "https://quickchart.io/chart?c=" .. UrlEncode(jsonConfig) .. "&w=900&h=450&f=png"
-end
-
---// Telegram Functions
-local function SendTelegramMessage(text)
-    if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or TELEGRAM_CHAT_ID == "" then 
-        return false 
-    end
-    
-    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(TELEGRAM_CHAT_ID) .. "&text=" .. UrlEncode(text) .. "&parse_mode=Markdown"
-    
-    local success, response = MakeHttpRequest(url)
-    return success and response and response:find('"ok":true')
-end
-
-local function SendTelegramPhoto(photoUrl, caption)
-    if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" or TELEGRAM_CHAT_ID == "" then 
-        return false 
-    end
-    
-    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendPhoto?chat_id=" .. UrlEncode(TELEGRAM_CHAT_ID) .. "&photo=" .. UrlEncode(photoUrl) .. "&caption=" .. UrlEncode(caption) .. "&parse_mode=Markdown"
-    
-    local success, response = MakeHttpRequest(url)
-    
-    if not success then
-        SendTelegramMessage(caption .. "\n\n⚠️ _Graph failed_")
-    end
-    
-    return success
-end
-
-local function SendAtlasReport()
-    local currentGold = GetRawGoldAmount()
-    local gph = CalculateGPH()
-    local avgGph = GetAverageGPH()
-    local earned = currentGold - AtlasStats.StartGold
-    local projected24h = gph * 24
-    
-    local caption = "📊 *ATLAS REPORT*\n\n"
-    caption = caption .. "👤 *Player:* `" .. PLAYER_NAME .. "`\n"
-    caption = caption .. "⏱ *Time:* `" .. FormatUptime() .. "`\n\n"
-    caption = caption .. "💰 *Gold:* `" .. FormatAtlasNumber(currentGold) .. "`\n"
-    caption = caption .. "📈 *Earned:* `+" .. FormatAtlasNumber(earned) .. "`\n"
-    caption = caption .. "⚡ *GPH:* `" .. FormatAtlasNumber(gph) .. "/h`\n"
-    caption = caption .. "📊 *Avg:* `" .. FormatAtlasNumber(avgGph) .. "/h`\n"
-    caption = caption .. "🏆 *Peak:* `" .. FormatAtlasNumber(AtlasStats.PeakGPH) .. "/h`\n\n"
-    
-    if projected24h > 0 then
-        caption = caption .. "🔮 *24h Proj:* `" .. FormatAtlasNumber(projected24h) .. "`\n\n"
-    end
-    
-    caption = caption .. "_Updated: " .. os.date("%H:%M:%S") .. "_"
-    
-    local chartUrl = GenerateAtlasChart()
-    if chartUrl then
-        SendTelegramPhoto(chartUrl, caption)
-    else
-        SendTelegramMessage(caption)
-    end
-end
-
-local function CheckBotToken()
-    if TELEGRAM_BOT_TOKEN == "" then
-        return false, "Token is empty"
-    end
-    
-    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getMe"
-    local success, response = MakeHttpRequest(url)
-    
-    if not success or not response then
-        return false, "No HTTP methods available"
-    end
-    
-    if response:find('"ok":true') then
-        local botName = response:match('"username":"([^"]+)"')
-        return true, "Bot OK: @" .. (botName or "unknown")
-    elseif response:find('"error_code":401') then
-        return false, "Invalid Bot Token (401)"
-    else
-        return false, "Unknown error"
-    end
-end
-
-local function GetChatIdFromUpdates()
-    if TELEGRAM_BOT_TOKEN == "" then
-        return nil, "Bot token is empty!"
-    end
-    
-    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getUpdates?offset=-1"
-    local success, response = MakeHttpRequest(url)
-    
-    if not success or not response then
-        return nil, "HTTP request failed"
-    end
-    
-    if response:find('"ok":true') then
-        local chatId = response:match('"chat":{"id":([%-]?%d+)')
-        if not chatId then
-            chatId = response:match('"from":{"id":([%-]?%d+)')
-        end
-        
-        if chatId then
-            return chatId, "Success!"
-        else
-            return nil, "No messages found. Send /start to bot first!"
-        end
-    elseif response:find('"error_code":401') then
-        return nil, "Invalid token!"
-    else
-        return nil, "API Error"
-    end
-end
-
---// Save/Load Settings
-local function SaveTelegramSettings()
-    local folderPath = "BoogaX"
-    local filePath = folderPath .. "/telegram_atlas.json"
-    
-    pcall(function()
-        if not isfolder(folderPath) then
-            makefolder(folderPath)
-        end
-    end)
-    
-    local allChatIds = {}
-    for _, id in ipairs(TELEGRAM_CHAT_IDS) do
-        table.insert(allChatIds, id)
-    end
-    
-    if TELEGRAM_CHAT_ID ~= "" then
-        local found = false
-        for _, id in ipairs(allChatIds) do
-            if tostring(id) == tostring(TELEGRAM_CHAT_ID) then
-                found = true
-                break
-            end
-        end
-        if not found then
-            table.insert(allChatIds, TELEGRAM_CHAT_ID)
-        end
-    end
-    
-    local data = {
-        bot_token = TELEGRAM_BOT_TOKEN,
-        chat_id = TELEGRAM_CHAT_ID,
-        chat_ids = allChatIds,
-        enabled = TELEGRAM_ENABLED,
-        start_gold = AtlasStats.StartGold
-    }
-    
-    pcall(function()
-        if writefile then
-            writefile(filePath, HttpService:JSONEncode(data))
-        end
-    end)
-end
-
-local function LoadTelegramSettings()
-    local folderPath = "BoogaX"
-    local filePath = folderPath .. "/telegram_atlas.json"
-    
-    pcall(function()
-        if readfile then
-            local content = readfile(filePath)
-            if content and content ~= "" then
-                local data = HttpService:JSONDecode(content)
-                TELEGRAM_BOT_TOKEN = tostring(data.bot_token or "")
-                TELEGRAM_CHAT_ID = tostring(data.chat_id or "")
-                TELEGRAM_CHAT_IDS = data.chat_ids or {}
-                TELEGRAM_ENABLED = data.enabled == true
-                if data.start_gold then
-                    AtlasStats.StartGold = data.start_gold
-                end
-            end
-        end
-    end)
-end
-
---// Bot Command Handler
-local function HandleTelegramCommand(message)
-    if not message or not message.text then return end
-    
-    local text = message.text
-    local chatId = tostring(message.chat.id)
-    
-    local isAuthorized = false
-    for _, id in ipairs(TELEGRAM_CHAT_IDS) do
-        if tostring(id) == chatId then
-            isAuthorized = true
-            break
-        end
-    end
-    
-    if text == "/start" and not isAuthorized then
-        table.insert(TELEGRAM_CHAT_IDS, chatId)
-        SaveTelegramSettings()
-        isAuthorized = true
-    end
-    
-    if not isAuthorized then return end
-
-    if text == "/start" then
-        local currentGold = GetRawGoldAmount()
-        local gph = CalculateGPH()
-        local msg = "🎮 *Atlas Dashboard*\n\n"
-        msg = msg .. "👤 Player: `" .. PLAYER_NAME .. "`\n"
-        msg = msg .. "💰 Gold: `" .. FormatAtlasNumber(currentGold) .. "`\n"
-        msg = msg .. "⚡ GPH: `" .. FormatAtlasNumber(gph) .. "/h`\n"
-        msg = msg .. "⏰ Uptime: `" .. FormatUptime() .. "`\n\n"
-        msg = msg .. "*Commands:*\n/start - Status\n/gold - Gold check\n/stats - Full report with graph\n/gph - Statistics\n/chart - Only graph"
-        
-        local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(chatId) .. "&text=" .. UrlEncode(msg) .. "&parse_mode=Markdown"
-        MakeHttpRequest(url)
-        
-    elseif text == "/gold" then
-        local currentGold = GetRawGoldAmount()
-        local gph = CalculateGPH()
-        local msg = "💰 *Gold Status*\nAmount: `" .. FormatAtlasNumber(currentGold) .. "`\nGPH: `" .. FormatAtlasNumber(gph) .. "/h`"
-        local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(chatId) .. "&text=" .. UrlEncode(msg) .. "&parse_mode=Markdown"
-        MakeHttpRequest(url)
-        
-    elseif text == "/stats" then
-        SendAtlasReport()
-        
-    elseif text == "/gph" then
-        local gph = CalculateGPH()
-        local avg = GetAverageGPH()
-        local msg = "⚡ *Gold Per Hour*\nCurrent: `" .. FormatAtlasNumber(gph) .. "/h`\nAverage: `" .. FormatAtlasNumber(avg) .. "/h`\nPeak: `" .. FormatAtlasNumber(AtlasStats.PeakGPH) .. "/h`"
-        local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendMessage?chat_id=" .. UrlEncode(chatId) .. "&text=" .. UrlEncode(msg) .. "&parse_mode=Markdown"
-        MakeHttpRequest(url)
-        
-    elseif text == "/chart" then
-        local chartUrl = GenerateAtlasChart()
-        if chartUrl then
-            local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendPhoto?chat_id=" .. UrlEncode(chatId) .. "&photo=" .. UrlEncode(chartUrl) .. "&caption=" .. UrlEncode("📈 Gold Progress")
-            MakeHttpRequest(url)
-        end
-    end
-end
-
-local function GetTelegramUpdates()
-    if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" then return nil end
-    
-    local offset = LAST_UPDATE_ID + 1
-    local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getUpdates?offset=" .. tostring(offset) .. "&timeout=1"
-    
-    local success, response = MakeHttpRequest(url)
-    
-    if not success or not response then return nil end
-    
-    local decodeSuccess, data = pcall(function()
-        return HttpService:JSONDecode(response)
-    end)
-    
-    if decodeSuccess and data and data.ok and data.result then
-        return data.result
-    end
-    
-    return nil
-end
-
-local function StartTelegramBot()
-    if not TELEGRAM_ENABLED or TELEGRAM_BOT_TOKEN == "" then return end
-    if BOT_LOOP_RUNNING then return end
-    
-    BOT_LOOP_RUNNING = true
-    
-    task.spawn(function()
-        local testUrl = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/getUpdates?offset=-1&limit=1"
-        local success, response = MakeHttpRequest(testUrl)
-        if success and response then
-            local decodeSuccess, data = pcall(function()
-                return HttpService:JSONDecode(response)
-            end)
-            if decodeSuccess and data and data.ok and data.result and #data.result > 0 then
-                LAST_UPDATE_ID = data.result[1].update_id
-            end
-        end
-    end)
-    
-    task.spawn(function()
-        task.wait(1)
-        while TELEGRAM_ENABLED do
-            local updates = GetTelegramUpdates()
-            
-            if updates then
-                for _, update in ipairs(updates) do
-                    if update.update_id then
-                        LAST_UPDATE_ID = math.max(LAST_UPDATE_ID, update.update_id)
-                    end
-                    if update.message then
-                        pcall(function()
-                            HandleTelegramCommand(update.message)
-                        end)
-                    end
-                end
-            end
-            
-            task.wait(2)
-        end
-        BOT_LOOP_RUNNING = false
-    end)
-end
-
---// UI Creation
+--// UI: Draggable
 local function MakeDraggable(topbar, frame)
     local dragging, dragInput, dragStart, startPos
     topbar.InputBegan:Connect(function(input)
@@ -657,7 +489,7 @@ local function MakeDraggable(topbar, frame)
     end)
 end
 
---// Main UI
+--// UI Creation
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = HttpService:GenerateGUID(false)
 ScreenGui.ResetOnSpawn = false
@@ -701,7 +533,6 @@ CloseBtn.TextSize = 18
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.AutoButtonColor = false
 CloseBtn.ClipsDescendants = true
-
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
 
 local MinimizeBtn = Instance.new("TextButton", TitleBar)
@@ -714,7 +545,6 @@ MinimizeBtn.TextSize = 18
 MinimizeBtn.Font = Enum.Font.GothamBold
 MinimizeBtn.AutoButtonColor = false
 MinimizeBtn.ClipsDescendants = true
-
 Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 8)
 
 local Sidebar = Instance.new("Frame", MainFrame)
@@ -741,15 +571,13 @@ ToggleBtn.Visible = false
 ToggleBtn.Active = true
 ToggleBtn.Draggable = true
 ToggleBtn.ClipsDescendants = true
-
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+
+MakeDraggable(TitleBar, MainFrame)
 
 local Tabs = {}
 local ActiveTab = nil
 local Minimized = false
-
-MakeDraggable(TitleBar, MainFrame)
-MakeDraggable(ToggleBtn, ToggleBtn)
 
 local function ToggleUI()
     Minimized = not Minimized
@@ -775,7 +603,6 @@ local function CreateTab(name)
     TabBtn.Text = ""
     TabBtn.AutoButtonColor = false
     TabBtn.ClipsDescendants = true
-    
     Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
     
     local Indicator = Instance.new("Frame", TabBtn)
@@ -783,8 +610,6 @@ local function CreateTab(name)
     Indicator.Position = UDim2.new(0, 0, 0.5, -10)
     Indicator.BackgroundColor3 = Config.Theme.Accent
     Indicator.Visible = false
-    Indicator.BorderSizePixel = 0
-    
     Instance.new("UICorner", Indicator).CornerRadius = UDim.new(0, 2)
     
     local TabText = Instance.new("TextLabel", TabBtn)
@@ -811,7 +636,6 @@ local function CreateTab(name)
     
     local function Activate()
         if ActiveTab == Content then return end
-        
         if ActiveTab then ActiveTab.Visible = false end
         
         for _, tab in pairs(Tabs) do
@@ -823,7 +647,6 @@ local function CreateTab(name)
         ActiveTab = Content
         Content.Visible = true
         Indicator.Visible = true
-        
         Tween(TabBtn, {BackgroundColor3 = Color3.fromRGB(40, 40, 40)}, 0.3)
         Tween(TabText, {TextColor3 = Config.Theme.Text}, 0.2)
     end
@@ -863,17 +686,14 @@ local function CreateTab(name)
             Btn.Font = Enum.Font.Gotham
             Btn.AutoButtonColor = false
             Btn.ClipsDescendants = true
-            
             Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
             
             Btn.MouseButton1Click:Connect(function(x, y)
                 local mousePos = UserInputService:GetMouseLocation()
                 local buttonPos = Btn.AbsolutePosition
                 Ripple(Btn, mousePos.X - buttonPos.X, mousePos.Y - buttonPos.Y)
-                
                 if callback then 
-                    local success, err = pcall(callback)
-                    if not success then print("Error:", err) end
+                    pcall(callback)
                 end
             end)
             
@@ -887,54 +707,40 @@ local function CreateTab(name)
         end,
         
         AddToggle = function(self, text, default, callback)
-            local ToggleFrame = Instance.new("Frame", Content)
-            ToggleFrame.Size = UDim2.new(1, 0, 0, 40)
-            ToggleFrame.BackgroundColor3 = Config.Theme.Secondary
-            ToggleFrame.BorderSizePixel = 0
-            ToggleFrame.ClipsDescendants = true
+            local Frame = Instance.new("Frame", Content)
+            Frame.Size = UDim2.new(1, 0, 0, 40)
+            Frame.BackgroundColor3 = Config.Theme.Secondary
+            Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
             
-            Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 8)
+            local Label = Instance.new("TextLabel", Frame)
+            Label.Size = UDim2.new(1, -70, 1, 0)
+            Label.Position = UDim2.new(0, 15, 0, 0)
+            Label.BackgroundTransparency = 1
+            Label.Text = text
+            Label.TextColor3 = Config.Theme.Text
+            Label.TextSize = 14
+            Label.Font = Enum.Font.Gotham
+            Label.TextXAlignment = Enum.TextXAlignment.Left
             
-            local ToggleText = Instance.new("TextLabel", ToggleFrame)
-            ToggleText.Size = UDim2.new(1, -70, 1, 0)
-            ToggleText.Position = UDim2.new(0, 15, 0, 0)
-            ToggleText.BackgroundTransparency = 1
-            ToggleText.Text = text
-            ToggleText.TextColor3 = Config.Theme.Text
-            ToggleText.TextSize = 14
-            ToggleText.Font = Enum.Font.Gotham
-            ToggleText.TextXAlignment = Enum.TextXAlignment.Left
-            
-            local Switch = Instance.new("TextButton", ToggleFrame)
+            local Switch = Instance.new("TextButton", Frame)
             Switch.Size = UDim2.new(0, 44, 0, 24)
             Switch.Position = UDim2.new(1, -60, 0.5, -12)
             Switch.BackgroundColor3 = default and Config.Theme.Accent or Color3.fromRGB(60, 60, 60)
             Switch.Text = ""
-            Switch.AutoButtonColor = false
-            Switch.ClipsDescendants = true
-            
             Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
             
             local Circle = Instance.new("Frame", Switch)
             Circle.Size = UDim2.new(0, 18, 0, 18)
             Circle.Position = default and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
             Circle.BackgroundColor3 = Config.Theme.Background
-            Circle.BorderSizePixel = 0
-            
             Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
             
             local Value = default
             
             Switch.MouseButton1Click:Connect(function()
-                Ripple(Switch, 22, 12)
-                
                 Value = not Value
-                local targetPos = Value and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
-                local targetColor = Value and Config.Theme.Accent or Color3.fromRGB(60, 60, 60)
-                
-                Tween(Circle, {Position = targetPos}, 0.3)
-                Tween(Switch, {BackgroundColor3 = targetColor}, 0.3)
-                
+                Tween(Circle, {Position = Value and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)}, 0.3)
+                Tween(Switch, {BackgroundColor3 = Value and Config.Theme.Accent or Color3.fromRGB(60, 60, 60)}, 0.3)
                 if callback then
                     pcall(function() callback(Value) end)
                 end
@@ -945,8 +751,6 @@ local function CreateTab(name)
             local BoxFrame = Instance.new("Frame", Content)
             BoxFrame.Size = UDim2.new(1, 0, 0, 70)
             BoxFrame.BackgroundColor3 = Config.Theme.Secondary
-            BoxFrame.BorderSizePixel = 0
-            
             Instance.new("UICorner", BoxFrame).CornerRadius = UDim.new(0, 8)
             
             local Label = Instance.new("TextLabel", BoxFrame)
@@ -969,15 +773,12 @@ local function CreateTab(name)
             TextBox.PlaceholderColor3 = Config.Theme.SubText
             TextBox.TextSize = 14
             TextBox.Font = Enum.Font.Gotham
-            TextBox.ClearTextOnFocus = false
-            
             if isPassword then
                 TextBox.TextInputType = Enum.TextInputType.Password
             end
-            
             Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 6)
             
-            TextBox.FocusLost:Connect(function(enterPressed)
+            TextBox.FocusLost:Connect(function()
                 if callback then
                     pcall(function() callback(TextBox.Text) end)
                 end
@@ -1008,31 +809,16 @@ end
 CloseBtn.MouseEnter:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
 CloseBtn.MouseLeave:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) end)
 CloseBtn.MouseButton1Click:Connect(function()
-    local mousePos = UserInputService:GetMouseLocation()
-    local btnPos = CloseBtn.AbsolutePosition
-    Ripple(CloseBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
-    wait(0.2)
     Tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.3)
     wait(0.3)
     ScreenGui:Destroy()
-    getgenv().StatusUI_Loaded = false
+    getgenv().AtlasUI_Loaded = false
 end)
 
 MinimizeBtn.MouseEnter:Connect(function() Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
 MinimizeBtn.MouseLeave:Connect(function() Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) end)
-MinimizeBtn.MouseButton1Click:Connect(function()
-    local mousePos = UserInputService:GetMouseLocation()
-    local btnPos = MinimizeBtn.AbsolutePosition
-    Ripple(MinimizeBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
-    ToggleUI()
-end)
-
-ToggleBtn.MouseButton1Click:Connect(function()
-    local mousePos = UserInputService:GetMouseLocation()
-    local btnPos = ToggleBtn.AbsolutePosition
-    Ripple(ToggleBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
-    ToggleUI()
-end)
+MinimizeBtn.MouseButton1Click:Connect(ToggleUI)
+ToggleBtn.MouseButton1Click:Connect(ToggleUI)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed and input.KeyCode == Enum.KeyCode.RightShift then
@@ -1040,81 +826,53 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
---// Load Settings First
-LoadTelegramSettings()
-
---// Initialize Atlas Stats
+--// Load Settings
+LoadSettings()
 if AtlasStats.StartGold == 0 then
-    AtlasStats.StartGold = GetRawGoldAmount()
+    AtlasStats.StartGold = GetGold()
 end
 
 --// Create Tabs
 local StatsTab = CreateTab("Statistics")
 local TelegramTab = CreateTab("Telegram")
-local MainTab = CreateTab("Main")
 
---// Statistics Tab
-StatsTab:AddLabel("📊 Atlas Gold Tracking", Config.Theme.Accent)
-
+--// Stats Tab
+StatsTab:AddLabel("📊 Gold Tracking", Config.Theme.Accent)
 local GphLabel = StatsTab:AddLabel("⚡ GPH: Calculating...")
-local PeakLabel = StatsTab:AddLabel("🏆 Peak GPH: 0")
+local PeakLabel = StatsTab:AddLabel("🏆 Peak: 0")
 local EarnedLabel = StatsTab:AddLabel("📈 Earned: 0")
-local ProjectedLabel = StatsTab:AddLabel("🔮 Projected 24h: ...")
 
-StatsTab:AddButton("🔄 Refresh Stats", function()
-    local current = GetRawGoldAmount()
+StatsTab:AddButton("🔄 Refresh", function()
+    local current = GetGold()
     local gph = CalculateGPH()
     local earned = current - AtlasStats.StartGold
-    local projected = gph * 24
-    
-    GphLabel.Text = "⚡ GPH: " .. FormatAtlasNumber(gph) .. "/h"
-    PeakLabel.Text = "🏆 Peak GPH: " .. FormatAtlasNumber(AtlasStats.PeakGPH) .. "/h"
-    EarnedLabel.Text = "📈 Earned: " .. FormatAtlasNumber(earned)
-    ProjectedLabel.Text = "🔮 Projected 24h: " .. FormatAtlasNumber(projected)
-    
-    StarterGui:SetCore("SendNotification", {
-        Title = "Atlas Stats",
-        Text = "GPH: " .. FormatAtlasNumber(gph) .. "/h",
-        Duration = 3
-    })
+    GphLabel.Text = "⚡ GPH: " .. FormatNumber(gph) .. "/h"
+    PeakLabel.Text = "🏆 Peak: " .. FormatNumber(AtlasStats.PeakGPH) .. "/h"
+    EarnedLabel.Text = "📈 Earned: " .. FormatNumber(earned)
 end)
 
-StatsTab:AddButton("📸 Send Report to Telegram", function()
+StatsTab:AddButton("📤 Send Report", function()
     if TELEGRAM_ENABLED then
-        SendAtlasReport()
-        StarterGui:SetCore("SendNotification", {
-            Title = "Telegram",
-            Text = "Report sent!",
-            Duration = 3
-        })
+        SendReport()
+        StarterGui:SetCore("SendNotification", {Title = "Atlas", Text = "Report sent!", Duration = 3})
     else
-        StarterGui:SetCore("SendNotification", {
-            Title = "Error",
-            Text = "Enable Telegram first!",
-            Duration = 3
-        })
+        StarterGui:SetCore("SendNotification", {Title = "Error", Text = "Enable Telegram first!", Duration = 3})
     end
 end)
 
-StatsTab:AddButton("🗑️ Reset Session", function()
+StatsTab:AddButton("🗑️ Reset", function()
     AtlasStats.History = {}
-    AtlasStats.StartGold = GetRawGoldAmount()
+    AtlasStats.StartGold = GetGold()
     AtlasStats.PeakGPH = 0
-    StarterGui:SetCore("SendNotification", {
-        Title = "Atlas",
-        Text = "Session reset!",
-        Duration = 2
-    })
+    StarterGui:SetCore("SendNotification", {Title = "Atlas", Text = "Reset!", Duration = 2})
 end)
 
-StatsTab:AddLabel("Auto-collects every 5 min")
-
 --// Telegram Tab
-TelegramTab:AddLabel("📱 Bot Configuration", Config.Theme.Accent)
+TelegramTab:AddLabel("📱 Configuration", Config.Theme.Accent)
 
 local tokenBox = TelegramTab:AddTextBox("Bot Token", "Enter token...", function(text)
     TELEGRAM_BOT_TOKEN = text
-    SaveTelegramSettings()
+    SaveSettings()
 end, true)
 
 if TELEGRAM_BOT_TOKEN ~= "" then
@@ -1122,141 +880,73 @@ if TELEGRAM_BOT_TOKEN ~= "" then
 end
 
 TelegramTab:AddButton("🔍 Check Token", function()
-    local ok, msg = CheckBotToken()
-    StarterGui:SetCore("SendNotification", {
-        Title = "Bot Check",
-        Text = msg,
-        Duration = 5
-    })
+    local ok, msg = CheckToken()
+    StarterGui:SetCore("SendNotification", {Title = "Bot", Text = msg, Duration = 5})
 end)
 
 TelegramTab:AddButton("📱 Get Chat ID", function()
-    local chatId, msg = GetChatIdFromUpdates()
-    if chatId then
-        TELEGRAM_CHAT_ID = chatId
-        SaveTelegramSettings()
-        StarterGui:SetCore("SendNotification", {
-            Title = "Chat ID Found",
-            Text = "ID: " .. chatId,
-            Duration = 5
-        })
+    local id, msg = GetChatID()
+    if id then
+        TELEGRAM_CHAT_ID = id
+        SaveSettings()
+        StarterGui:SetCore("SendNotification", {Title = "Chat ID", Text = id, Duration = 5})
     else
-        StarterGui:SetCore("SendNotification", {
-            Title = "Error",
-            Text = msg,
-            Duration = 5
-        })
+        StarterGui:SetCore("SendNotification", {Title = "Error", Text = msg, Duration = 5})
     end
 end)
 
 TelegramTab:AddToggle("Enable Bot", TELEGRAM_ENABLED, function(state)
     TELEGRAM_ENABLED = state
-    SaveTelegramSettings()
+    SaveSettings()
     if state and TELEGRAM_BOT_TOKEN ~= "" then
-        StartTelegramBot()
+        StartBot()
         if TELEGRAM_CHAT_ID ~= "" then
-            SendTelegramMessage("✅ *Atlas Connected!*\nPlayer: `" .. PLAYER_NAME .. "`")
+            SendMsg("✅ *Atlas Connected!*\nPlayer: `" .. LocalPlayer.Name .. "`")
         end
-        StarterGui:SetCore("SendNotification", {
-            Title = "Telegram",
-            Text = "Bot started! Send /start",
-            Duration = 3
-        })
+        StarterGui:SetCore("SendNotification", {Title = "Telegram", Text = "Started!", Duration = 3})
     end
 end)
 
-TelegramTab:AddButton("📤 Test Message", function()
-    if SendTelegramMessage("🧪 Test\n⏱ " .. FormatUptime()) then
-        StarterGui:SetCore("SendNotification", {
-            Title = "Telegram",
-            Text = "Message sent!",
-            Duration = 3
-        })
+TelegramTab:AddButton("📤 Test", function()
+    if SendMsg("🧪 Test from Atlas") then
+        StarterGui:SetCore("SendNotification", {Title = "Telegram", Text = "Sent!", Duration = 3})
     else
-        StarterGui:SetCore("SendNotification", {
-            Title = "Error",
-            Text = "Failed to send",
-            Duration = 3
-        })
-    end
-end)
-
-TelegramTab:AddButton("📊 Send Graph Only", function()
-    local chartUrl = GenerateAtlasChart()
-    if chartUrl and TELEGRAM_ENABLED then
-        local url = "https://api.telegram.org/bot" .. TELEGRAM_BOT_TOKEN .. "/sendPhoto?chat_id=" .. UrlEncode(TELEGRAM_CHAT_ID) .. "&photo=" .. UrlEncode(chartUrl) .. "&caption=" .. UrlEncode("📈 Gold Chart")
-        MakeHttpRequest(url)
-        StarterGui:SetCore("SendNotification", {
-            Title = "Telegram",
-            Text = "Graph sent!",
-            Duration = 3
-        })
-    end
-end)
-
-TelegramTab:AddToggle("Auto Reports (1h)", false, function(state)
-    getgenv().AutoAtlasReports = state
-    if state then
-        task.spawn(function()
-            while getgenv().AutoAtlasReports and TELEGRAM_ENABLED do
-                SendAtlasReport()
-                task.wait(3600)
-            end
-        end)
+        StarterGui:SetCore("SendNotification", {Title = "Error", Text = "Failed!", Duration = 3})
     end
 end)
 
 TelegramTab:AddLabel("Commands: /start, /gold, /stats, /gph, /chart")
 
---// Main Tab
-MainTab:AddLabel("Welcome to Atlas UI")
-MainTab:AddLabel("Track gold with graphs!")
-
-MainTab:AddButton("💰 Check Gold", function()
-    local gold = GetRawGoldAmount()
-    StarterGui:SetCore("SendNotification", {
-        Title = "Gold",
-        Text = FormatAtlasNumber(gold),
-        Duration = 3
-    })
-end)
-
---// Auto Data Collection
+--// Data Collection
 task.spawn(function()
-    while AtlasStats.DataEnabled do
-        task.wait(300) -- 5 minutes
-        
-        local current = GetRawGoldAmount()
+    while true do
+        task.wait(300) -- 5 min
+        local current = GetGold()
         table.insert(AtlasStats.History, {
-            timestamp = tick(),
+            time = tick(),
             gold = current
         })
-        
         if #AtlasStats.History > 50 then
             table.remove(AtlasStats.History, 1)
         end
-        
         CalculateGPH()
     end
 end)
 
 --// Auto-start
 if TELEGRAM_ENABLED and TELEGRAM_BOT_TOKEN ~= "" then
-    task.delay(2, function()
-        StartTelegramBot()
-    end)
+    task.delay(2, StartBot)
 end
 
---// Intro Animation
+--// Show UI
 MainFrame.Visible = true
 Tween(MainFrame, {Size = Config.Size}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
 print("✅ Atlas UI Loaded!")
-print("📊 Use /stats in Telegram for graph report")
+print("Commands: /stats for graph report")
 
---// Return
 getgenv().AtlasUI = {
-    SendReport = SendAtlasReport,
+    SendReport = SendReport,
     GetGPH = CalculateGPH,
-    GetGold = GetRawGoldAmount
+    GetGold = GetGold
 }
