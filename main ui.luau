@@ -1,8 +1,8 @@
---// Nebula UI v2.0 | One-File Edition
---// No Infinite Yield Issues | Safe Execution
+--// Status UI v1.0 | Premium Exploit Interface
+--// One-File Edition | No Infinite Yield Issues
 
-if getgenv().NebulaUI_Loaded then return end
-getgenv().NebulaUI_Loaded = true
+if getgenv().StatusUI_Loaded then return end
+getgenv().StatusUI_Loaded = true
 
 -- Services
 local Players = game:GetService("Players")
@@ -17,22 +17,23 @@ local Mouse = LocalPlayer:GetMouse()
 
 --// Config
 local Config = {
-    Title = "NEBULA",
-    SubTitle = "Premium Exploit",
+    Title = "STATUS",
+    SubTitle = "Premium | v1.0",
     ToggleKey = Enum.KeyCode.RightShift,
     Size = UDim2.new(0, 650, 0, 450),
     Position = UDim2.new(0.5, -325, 0.5, -225),
     Theme = {
-        Background = Color3.fromRGB(13, 13, 18),
-        Secondary = Color3.fromRGB(22, 22, 30),
-        Accent = Color3.fromRGB(139, 92, 246),
-        Accent2 = Color3.fromRGB(59, 130, 246),
+        Background = Color3.fromRGB(10, 10, 15),
+        Secondary = Color3.fromRGB(20, 20, 28),
+        Accent = Color3.fromRGB(0, 255, 136), -- Мятный/зеленый акцент
+        Accent2 = Color3.fromRGB(0, 200, 255), -- Голубой
         Text = Color3.fromRGB(255, 255, 255),
-        SubText = Color3.fromRGB(148, 163, 184),
-        Border = Color3.fromRGB(51, 65, 85),
-        Glow = Color3.fromRGB(139, 92, 246),
-        Success = Color3.fromRGB(34, 197, 94),
-        Error = Color3.fromRGB(239, 68, 68)
+        SubText = Color3.fromRGB(150, 150, 170),
+        Border = Color3.fromRGB(40, 40, 55),
+        Glow = Color3.fromRGB(0, 255, 136),
+        Success = Color3.fromRGB(0, 255, 136),
+        Error = Color3.fromRGB(255, 50, 50),
+        Warning = Color3.fromRGB(255, 200, 0)
     }
 }
 
@@ -81,7 +82,7 @@ local function Ripple(button, x, y)
     spawn(function()
         local ripple = Instance.new("Frame")
         ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        ripple.BackgroundTransparency = 0.6
+        ripple.BackgroundTransparency = 0.7
         ripple.BorderSizePixel = 0
         ripple.Position = UDim2.new(0, x - 5, 0, y - 5)
         ripple.Size = UDim2.new(0, 10, 0, 10)
@@ -102,7 +103,6 @@ ScreenGui.Name = HttpService:GenerateGUID(false)
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- Проверяем, есть ли CoreGui доступ (для эксплойтов)
 pcall(function()
     ScreenGui.Parent = CoreGui
 end)
@@ -114,7 +114,7 @@ end
 -- Main Frame
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 0, 0, 0) -- Start small for animation
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
 MainFrame.Position = Config.Position
 MainFrame.BackgroundColor3 = Config.Theme.Background
 MainFrame.BorderSizePixel = 0
@@ -136,13 +136,13 @@ Glow.Position = UDim2.new(0, -20, 0, -20)
 Glow.BackgroundTransparency = 1
 Glow.Image = "rbxassetid://5028857084"
 Glow.ImageColor3 = Config.Theme.Glow
-Glow.ImageTransparency = 0.85
+Glow.ImageTransparency = 0.8
 
 -- Gradient Background
 local Gradient = Instance.new("UIGradient", MainFrame)
 Gradient.Color = ColorSequence.new({
     ColorSequenceKeypoint.new(0, Config.Theme.Background),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 25))
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 22))
 })
 Gradient.Rotation = 45
 
@@ -170,7 +170,7 @@ TitleText.Position = UDim2.new(0, 20, 0, 0)
 TitleText.BackgroundTransparency = 1
 TitleText.Text = Config.Title
 TitleText.TextColor3 = Config.Theme.Text
-TitleText.TextSize = 22
+TitleText.TextSize = 24
 TitleText.Font = Enum.Font.GothamBold
 TitleText.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -197,7 +197,7 @@ Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
 local MinimizeBtn = Instance.new("TextButton", TitleBar)
 MinimizeBtn.Size = UDim2.new(0, 32, 0, 32)
 MinimizeBtn.Position = UDim2.new(1, -80, 0, 9)
-MinimizeBtn.BackgroundColor3 = Color3.fromRGB(234, 179, 8)
+MinimizeBtn.BackgroundColor3 = Config.Theme.Warning
 MinimizeBtn.Text = "−"
 MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 MinimizeBtn.TextSize = 20
@@ -212,8 +212,7 @@ Sidebar.BackgroundColor3 = Config.Theme.Secondary
 Sidebar.BackgroundTransparency = 0.8
 Sidebar.BorderSizePixel = 0
 
-local SideCorner = Instance.new("UICorner", Sidebar)
-SideCorner.CornerRadius = UDim.new(0, 0)
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 0)
 
 -- Tab Container
 local TabContainer = Instance.new("Frame", MainFrame)
@@ -226,10 +225,10 @@ local ToggleBtn = Instance.new("TextButton", ScreenGui)
 ToggleBtn.Size = UDim2.new(0, 55, 0, 55)
 ToggleBtn.Position = UDim2.new(0, 30, 0, 30)
 ToggleBtn.BackgroundColor3 = Config.Theme.Accent
-ToggleBtn.Text = "N"
-ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleBtn.TextSize = 26
-ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Text = "S"
+ToggleBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
+ToggleBtn.TextSize = 28
+ToggleBtn.Font = Enum.Font.GothamBlack
 ToggleBtn.Visible = false
 ToggleBtn.Active = true
 ToggleBtn.Draggable = true
@@ -238,7 +237,7 @@ Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
 local ToggleStroke = Instance.new("UIStroke", ToggleBtn)
 ToggleStroke.Color = Config.Theme.Glow
-ToggleStroke.Thickness = 2
+ToggleStroke.Thickness = 3
 
 local ToggleGlow = Instance.new("ImageLabel", ToggleBtn)
 ToggleGlow.Size = UDim2.new(1.6, 0, 1.6, 0)
@@ -246,12 +245,12 @@ ToggleGlow.Position = UDim2.new(0, -15, 0, -15)
 ToggleGlow.BackgroundTransparency = 1
 ToggleGlow.Image = "rbxassetid://5028857084"
 ToggleGlow.ImageColor3 = Config.Theme.Accent
-ToggleGlow.ImageTransparency = 0.5
+ToggleGlow.ImageTransparency = 0.4
 
 -- Notification Container
 local NotifContainer = Instance.new("Frame", ScreenGui)
-NotifContainer.Size = UDim2.new(0, 300, 1, -50)
-NotifContainer.Position = UDim2.new(1, -320, 0, 25)
+NotifContainer.Size = UDim2.new(0, 320, 1, -50)
+NotifContainer.Position = UDim2.new(1, -340, 0, 25)
 NotifContainer.BackgroundTransparency = 1
 NotifContainer.ClipsDescendants = true
 
@@ -275,7 +274,7 @@ local function ToggleUI()
     else
         MainFrame.Visible = true
         Tween(MainFrame, {Size = Config.Size}, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
-        Tween(Glow, {ImageTransparency = 0.85}, 0.4)
+        Tween(Glow, {ImageTransparency = 0.8}, 0.4)
         wait(0.4)
         ToggleBtn.Visible = false
     end
@@ -288,7 +287,7 @@ local function Notify(text, type, duration)
     local color = type == "Success" and Config.Theme.Success or type == "Error" and Config.Theme.Error or Config.Theme.Accent
     
     local Notif = Instance.new("Frame", NotifContainer)
-    Notif.Size = UDim2.new(1, 0, 0, 70)
+    Notif.Size = UDim2.new(1, 0, 0, 75)
     Notif.Position = UDim2.new(0, 0, 0, -100)
     Notif.BackgroundColor3 = Config.Theme.Secondary
     Notif.BorderSizePixel = 0
@@ -297,32 +296,30 @@ local function Notify(text, type, duration)
     
     local NotifStroke = Instance.new("UIStroke", Notif)
     NotifStroke.Color = color
-    NotifStroke.Thickness = 1
+    NotifStroke.Thickness = 1.5
     
     local Icon = Instance.new("TextLabel", Notif)
     Icon.Size = UDim2.new(0, 40, 0, 40)
-    Icon.Position = UDim2.new(0, 15, 0, 15)
+    Icon.Position = UDim2.new(0, 15, 0, 17)
     Icon.BackgroundTransparency = 1
-    Icon.Text = type == "Success" and "✓" or type == "Error" and "!" or "i"
+    Icon.Text = type == "Success" and "✓" or type == "Error" and "✕" or "ℹ"
     Icon.TextColor3 = color
-    Icon.TextSize = 24
+    Icon.TextSize = 26
     Icon.Font = Enum.Font.GothamBold
     
     local NotifText = Instance.new("TextLabel", Notif)
     NotifText.Size = UDim2.new(1, -70, 0, 40)
-    NotifText.Position = UDim2.new(0, 60, 0, 15)
+    NotifText.Position = UDim2.new(0, 60, 0, 17)
     NotifText.BackgroundTransparency = 1
     NotifText.Text = text
     NotifText.TextColor3 = Config.Theme.Text
-    NotifText.TextSize = 14
+    NotifText.TextSize = 15
     NotifText.Font = Enum.Font.Gotham
     NotifText.TextWrapped = true
     NotifText.TextXAlignment = Enum.TextXAlignment.Left
     
-    -- Slide in
     Tween(Notif, {Position = UDim2.new(0, 0, 0, 10)}, 0.5, Enum.EasingStyle.Back)
     
-    -- Slide out after duration
     spawn(function()
         wait(duration)
         Tween(Notif, {Position = UDim2.new(1, 0, 0, 10)}, 0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
@@ -405,10 +402,9 @@ local function CreateTab(name, icon)
         Indicator.Visible = true
         
         Tween(TabBtn, {BackgroundColor3 = Config.Theme.Accent}, 0.3)
-        Tween(TabText, {TextColor3 = Config.Theme.Text}, 0.2)
-        Tween(TabIcon, {TextColor3 = Config.Theme.Text}, 0.2)
+        Tween(TabText, {TextColor3 = Color3.fromRGB(0, 0, 0)}, 0.2)
+        Tween(TabIcon, {TextColor3 = Color3.fromRGB(0, 0, 0)}, 0.2)
         
-        -- Content animation
         Content.Position = UDim2.new(0.02, 10, 0, 10)
         Tween(Content, {Position = UDim2.new(0, 10, 0, 10)}, 0.4, Enum.EasingStyle.Quart)
     end
@@ -417,7 +413,7 @@ local function CreateTab(name, icon)
     
     TabBtn.MouseEnter:Connect(function()
         if ActiveTab ~= Content then
-            Tween(TabBtn, {BackgroundColor3 = Color3.fromRGB(40, 40, 55)}, 0.2)
+            Tween(TabBtn, {BackgroundColor3 = Color3.fromRGB(35, 35, 50)}, 0.2)
         end
     end)
     
@@ -433,6 +429,7 @@ local function CreateTab(name, icon)
         Indicator = Indicator,
         Text = TabText,
         Icon = TabIcon,
+        
         AddButton = function(self, text, callback)
             local Btn = Instance.new("TextButton", Content)
             Btn.Size = UDim2.new(1, 0, 0, 45)
@@ -466,7 +463,7 @@ local function CreateTab(name, icon)
             Arrow.Font = Enum.Font.GothamBold
             
             Btn.MouseEnter:Connect(function()
-                Tween(Btn, {BackgroundColor3 = Color3.fromRGB(45, 45, 65)}, 0.2)
+                Tween(Btn, {BackgroundColor3 = Color3.fromRGB(40, 40, 60)}, 0.2)
                 Tween(Arrow, {Position = UDim2.new(1, -30, 0, 0)}, 0.2)
                 BtnStroke.Color = Config.Theme.Accent
             end)
@@ -513,7 +510,7 @@ local function CreateTab(name, icon)
             local Switch = Instance.new("TextButton", ToggleFrame)
             Switch.Size = UDim2.new(0, 52, 0, 28)
             Switch.Position = UDim2.new(1, -65, 0.5, -14)
-            Switch.BackgroundColor3 = default and Config.Theme.Accent or Color3.fromRGB(60, 60, 75)
+            Switch.BackgroundColor3 = default and Config.Theme.Accent or Color3.fromRGB(50, 50, 65)
             Switch.Text = ""
             Switch.AutoButtonColor = false
             
@@ -532,7 +529,7 @@ local function CreateTab(name, icon)
             Switch.MouseButton1Click:Connect(function()
                 Value = not Value
                 local targetPos = Value and UDim2.new(1, -25, 0, 3) or UDim2.new(0, 3, 0, 3)
-                local targetColor = Value and Config.Theme.Accent or Color3.fromRGB(60, 60, 75)
+                local targetColor = Value and Config.Theme.Accent or Color3.fromRGB(50, 50, 65)
                 
                 Tween(Circle, {Position = targetPos}, 0.3, Enum.EasingStyle.Quart)
                 Tween(Switch, {BackgroundColor3 = targetColor}, 0.3)
@@ -576,7 +573,7 @@ local function CreateTab(name, icon)
             local SliderBg = Instance.new("Frame", SliderFrame)
             SliderBg.Size = UDim2.new(1, -30, 0, 8)
             SliderBg.Position = UDim2.new(0, 15, 0, 45)
-            SliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+            SliderBg.BackgroundColor3 = Color3.fromRGB(35, 35, 50)
             SliderBg.BorderSizePixel = 0
             
             Instance.new("UICorner", SliderBg).CornerRadius = UDim.new(1, 0)
@@ -680,7 +677,7 @@ local function CreateTab(name, icon)
             for i, option in pairs(options) do
                 local OptionBtn = Instance.new("TextButton", OptionsContainer)
                 OptionBtn.Size = UDim2.new(1, 0, 0, 35)
-                OptionBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+                OptionBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
                 OptionBtn.Text = option
                 OptionBtn.TextColor3 = Config.Theme.Text
                 OptionBtn.TextSize = 14
@@ -690,16 +687,18 @@ local function CreateTab(name, icon)
                 
                 OptionBtn.MouseEnter:Connect(function()
                     Tween(OptionBtn, {BackgroundColor3 = Config.Theme.Accent}, 0.2)
+                    OptionBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
                 end)
                 
                 OptionBtn.MouseLeave:Connect(function()
-                    Tween(OptionBtn, {BackgroundColor3 = Color3.fromRGB(35, 35, 45)}, 0.2)
+                    Tween(OptionBtn, {BackgroundColor3 = Color3.fromRGB(30, 30, 42)}, 0.2)
+                    OptionBtn.TextColor3 = Config.Theme.Text
                 end)
                 
                 OptionBtn.MouseButton1Click:Connect(function()
                     Label.Text = text .. ": " .. option
                     if callback then callback(option) end
-                    DropdownBtn:Fire() -- Close dropdown
+                    DropdownBtn:Fire()
                 end)
             end
             
@@ -708,6 +707,45 @@ local function CreateTab(name, icon)
                 local targetSize = Opened and UDim2.new(1, 0, 0, 60 + #options * 35) or UDim2.new(1, 0, 0, 50)
                 Tween(DropdownFrame, {Size = targetSize}, 0.3, Enum.EasingStyle.Quart)
                 Tween(Arrow, {Rotation = Opened and 180 or 0}, 0.3)
+            end)
+        end,
+        
+        AddTextBox = function(self, text, placeholder, callback)
+            local BoxFrame = Instance.new("Frame", Content)
+            BoxFrame.Size = UDim2.new(1, 0, 0, 80)
+            BoxFrame.BackgroundColor3 = Config.Theme.Secondary
+            BoxFrame.BorderSizePixel = 0
+            
+            Instance.new("UICorner", BoxFrame).CornerRadius = UDim.new(0, 10)
+            
+            local Label = Instance.new("TextLabel", BoxFrame)
+            Label.Size = UDim2.new(1, -20, 0, 30)
+            Label.Position = UDim2.new(0, 15, 0, 5)
+            Label.BackgroundTransparency = 1
+            Label.Text = text
+            Label.TextColor3 = Config.Theme.Text
+            Label.TextSize = 15
+            Label.Font = Enum.Font.GothamSemibold
+            Label.TextXAlignment = Enum.TextXAlignment.Left
+            
+            local TextBox = Instance.new("TextBox", BoxFrame)
+            TextBox.Size = UDim2.new(1, -30, 0, 35)
+            TextBox.Position = UDim2.new(0, 15, 0, 40)
+            TextBox.BackgroundColor3 = Color3.fromRGB(30, 30, 42)
+            TextBox.Text = ""
+            TextBox.PlaceholderText = placeholder or "Enter text..."
+            TextBox.TextColor3 = Config.Theme.Text
+            TextBox.PlaceholderColor3 = Config.Theme.SubText
+            TextBox.TextSize = 14
+            TextBox.Font = Enum.Font.Gotham
+            TextBox.ClearTextOnFocus = false
+            
+            Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 8)
+            
+            TextBox.FocusLost:Connect(function(enterPressed)
+                if callback and enterPressed then
+                    callback(TextBox.Text)
+                end
             end)
         end
     }
@@ -734,15 +772,15 @@ CloseBtn.MouseButton1Click:Connect(function()
     Tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
     wait(0.3)
     ScreenGui:Destroy()
-    getgenv().NebulaUI_Loaded = false
+    getgenv().StatusUI_Loaded = false
 end)
 
 MinimizeBtn.MouseEnter:Connect(function()
-    Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(202, 138, 4)}, 0.2)
+    Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(220, 180, 0)}, 0.2)
 end)
 
 MinimizeBtn.MouseLeave:Connect(function()
-    Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(234, 179, 8)}, 0.2)
+    Tween(MinimizeBtn, {BackgroundColor3 = Config.Theme.Warning}, 0.2)
 end)
 
 MinimizeBtn.MouseButton1Click:Connect(ToggleUI)
@@ -751,12 +789,12 @@ ToggleBtn.MouseButton1Click:Connect(ToggleUI)
 
 ToggleBtn.MouseEnter:Connect(function()
     Tween(ToggleBtn, {Size = UDim2.new(0, 60, 0, 60)}, 0.2)
-    ToggleGlow.ImageTransparency = 0.3
+    ToggleGlow.ImageTransparency = 0.2
 end)
 
 ToggleBtn.MouseLeave:Connect(function()
     Tween(ToggleBtn, {Size = UDim2.new(0, 55, 0, 55)}, 0.2)
-    ToggleGlow.ImageTransparency = 0.5
+    ToggleGlow.ImageTransparency = 0.4
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -770,23 +808,29 @@ MainFrame.Visible = true
 Tween(MainFrame, {Size = Config.Size}, 0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
 --// Return API
-local Nebula = {
+local Status = {
     CreateTab = CreateTab,
     Notify = Notify,
     Toggle = ToggleUI
 }
 
---// Example Usage (убери если не нужно)
+--// Example Usage (можешь удалить это и использовать свой код)
 local Main = CreateTab("Main", "⚡")
 local Player = CreateTab("Player", "👤")
 local Visuals = CreateTab("Visuals", "👁️")
 local Misc = CreateTab("Misc", "⚙️")
 
-Main:AddButton("Print Hello", function()
-    print("Hello from Nebula UI!")
+Main:AddButton("Infinite Jump", function()
+    local infiniteJump = false
+    game:GetService("UserInputService").JumpRequest:Connect(function()
+        if infiniteJump then
+            game:GetService("Players").LocalPlayer.Character:FindFirstChildOfClass("Humanoid"):ChangeState("Jumping")
+        end
+    end)
+    infiniteJump = true
 end)
 
-Main:AddToggle("Super Speed", false, function(value)
+Main:AddToggle("Speed Hack", false, function(value)
     if value then
         LocalPlayer.Character.Humanoid.WalkSpeed = 100
     else
@@ -794,19 +838,22 @@ Main:AddToggle("Super Speed", false, function(value)
     end
 end)
 
-Main:AddSlider("Speed Slider", 16, 500, 16, function(value)
+Main:AddSlider("WalkSpeed", 16, 500, 16, function(value)
     LocalPlayer.Character.Humanoid.WalkSpeed = value
 end)
 
-Main:AddDropdown("Select Mode", {"Legit", "Blatant", "Rage"}, function(option)
-    print("Selected mode:", option)
+Main:AddDropdown("Teleport", {"Spawn", "Shop", "Boss"}, function(location)
+    print("Teleporting to:", location)
 end)
 
-Player:AddButton("Full Bright", function()
-    game.Lighting.Brightness = 10
-    game.Lighting.GlobalShadows = false
+Player:AddButton("God Mode", function()
+    print("God mode activated")
 end)
 
-Notify("Nebula UI Loaded Successfully!", "Success", 3)
+Player:AddTextBox("Username", "Enter username...", function(text)
+    print("Selected user:", text)
+end)
 
-return Nebula
+Notify("Status UI Loaded!", "Success", 3)
+
+return Status
