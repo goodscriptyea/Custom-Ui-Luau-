@@ -1,5 +1,4 @@
---// Status UI | Atlas Edition + Telegram Graph Integration
---// Loadstring: loadstring(game:HttpGet("https://raw.githubusercontent.com/goodscriptyea/Custom-Ui-Luau-/main/WebhookTg.luau"))()
+oadstring(game:HttpGet("https://raw.githubusercontent.com/goodscriptyea/Custom-Ui-Luau-/main/WebhookTg.luau"))()
 
 if getgenv().StatusUI_Loaded then return end
 getgenv().StatusUI_Loaded = true
