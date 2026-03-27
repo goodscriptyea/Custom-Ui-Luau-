@@ -15,67 +15,32 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local packets = require(ReplicatedStorage.Modules.Packets)
 
---// Переменные состояния (вместо Options из Fluent)
+--// Переменные состояния
 local States = {
-    -- Main
-    Walkspeed = false,
-    WalkspeedValue = 16,
-    JumpPower = false,
-    JumpPowerValue = 50,
-    HipHeight = false,
-    HipHeightValue = 2,
+    Walkspeed = false, WalkspeedValue = 16,
+    JumpPower = false, JumpPowerValue = 50,
+    HipHeight = false, HipHeightValue = 2,
     NoMountainSlip = false,
-    
-    -- Combat
-    KillAura = false,
-    KillAuraRange = 5,
-    KillAuraTargets = 1,
-    KillAuraCooldown = 0.1,
-    
-    -- Map
-    ResourceAura = false,
-    ResourceAuraRange = 20,
-    ResourceAuraTargets = 1,
-    ResourceAuraCooldown = 0.1,
-    CritterAura = false,
-    CritterAuraRange = 20,
-    CritterAuraTargets = 1,
-    CritterAuraCooldown = 0.1,
-    
-    -- Pickup
-    AutoPickup = false,
-    ChestPickup = false,
-    PickupRange = 20,
+    KillAura = false, KillAuraRange = 5, KillAuraTargets = 1, KillAuraCooldown = 0.1,
+    ResourceAura = false, ResourceAuraRange = 20, ResourceAuraTargets = 1, ResourceAuraCooldown = 0.1,
+    CritterAura = false, CritterAuraRange = 20, CritterAuraTargets = 1, CritterAuraCooldown = 0.1,
+    AutoPickup = false, ChestPickup = false, PickupRange = 20,
     SelectedItems = {"Leaves", "Log"},
-    AutoDrop = false,
-    DropItem = "Bloodfruit",
-    AutoDropCustom = false,
-    DropItemCustom = "Bloodfruit",
-    
-    -- Farming
+    AutoDrop = false, DropItem = "Bloodfruit",
+    AutoDropCustom = false, DropItemCustom = "Bloodfruit",
     SelectedFruit = "Bloodfruit",
-    AutoPlant = false,
-    PlantRange = 30,
-    PlantDelay = 0.1,
-    AutoHarvest = false,
-    HarvestRange = 30,
-    TweenToPlantBox = false,
-    TweenToBush = false,
-    TweenRange = 250,
-    
-    -- Extra
-    ItemOrbit = false,
-    OrbitRange = 20,
-    OrbitRadius = 10,
-    OrbitSpeed = 5,
-    ItemHeight = 3
+    AutoPlant = false, PlantRange = 30, PlantDelay = 0.1,
+    AutoHarvest = false, HarvestRange = 30,
+    TweenToPlantBox = false, TweenToBush = false, TweenRange = 250,
+    ItemOrbit = false, OrbitRange = 20, OrbitRadius = 10, OrbitSpeed = 5, ItemHeight = 3
 }
 
---// Config UI
+--// Config UI - ОРИГИНАЛЬНЫЙ РАЗМЕР
 local Config = {
     Title = "HERKLE HUB",
-    Size = UDim2.new(0, 700, 0, 500),
-    Position = UDim2.new(0.5, -350, 0.5, -250),
+    SubTitle = "by herkle berlington",
+    Size = UDim2.new(0, 830, 0, 525),  -- Оригинальный размер
+    Position = UDim2.new(0.5, -415, 0.5, -262), -- Центр экрана для этого размера
     Theme = {
         Background = Color3.fromRGB(10, 10, 10),
         Secondary = Color3.fromRGB(20, 20, 20),
@@ -121,29 +86,65 @@ local function Ripple(button, x, y)
     end)
 end
 
+--// Улучшенная функция перетаскивания (Мышь + Тач)
 local function MakeDraggable(topbar, frame)
-    local dragging, dragInput, dragStart, startPos
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    local function update(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(
+            startPos.X.Scale, 
+            startPos.X.Offset + delta.X, 
+            startPos.Y.Scale, 
+            startPos.Y.Offset + delta.Y
+        )
+    end
+    
     topbar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
+            
+            -- Визуальный feedback
+            Tween(topbar, {BackgroundColor3 = Color3.fromRGB(35, 35, 35)}, 0.1)
         end
     end)
+    
     topbar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            dragInput = input
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
+                        input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
         end
     end)
+    
     UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
+                        input.UserInputType == Enum.UserInputType.Touch) then
+            if input.Position then
+                update(input)
+            end
         end
     end)
+    
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                dragging = false
+                -- Вернуть цвет
+                Tween(topbar, {BackgroundColor3 = Config.Theme.Secondary}, 0.2)
+            end
+        end
+    end)
+    
+    -- Курсор при наведении
+    topbar.MouseEnter:Connect(function()
+        if not dragging then
+            topbar.Parent.CursorPosition = Enum.CursorPosition.Mouse
         end
     end)
 end
@@ -158,7 +159,7 @@ pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.Size = UDim2.new(0, 0, 0, 0) -- Начальный размер для анимации
 MainFrame.Position = Config.Position
 MainFrame.BackgroundColor3 = Config.Theme.Background
 MainFrame.BorderSizePixel = 0
@@ -171,16 +172,27 @@ local TitleBar = Instance.new("Frame", MainFrame)
 TitleBar.Size = UDim2.new(1, 0, 0, 45)
 TitleBar.BackgroundColor3 = Config.Theme.Secondary
 TitleBar.BorderSizePixel = 0
+TitleBar.Active = true -- Важно для перетаскивания
 
 local TitleText = Instance.new("TextLabel", TitleBar)
-TitleText.Size = UDim2.new(1, -100, 1, 0)
+TitleText.Size = UDim2.new(1, -150, 1, 0)
 TitleText.Position = UDim2.new(0, 20, 0, 0)
 TitleText.BackgroundTransparency = 1
-TitleText.Text = Config.Title .. " // Booga Booga"
+TitleText.Text = Config.Title .. " // Booga Booga Reborn"
 TitleText.TextColor3 = Config.Theme.Text
 TitleText.TextSize = 18
 TitleText.Font = Enum.Font.GothamBold
 TitleText.TextXAlignment = Enum.TextXAlignment.Left
+
+local SubTitleText = Instance.new("TextLabel", TitleBar)
+SubTitleText.Size = UDim2.new(0, 200, 0, 20)
+SubTitleText.Position = UDim2.new(0, 20, 0, 22)
+SubTitleText.BackgroundTransparency = 1
+SubTitleText.Text = Config.SubTitle
+SubTitleText.TextColor3 = Config.Theme.SubText
+SubTitleText.TextSize = 12
+SubTitleText.Font = Enum.Font.Gotham
+SubTitleText.TextXAlignment = Enum.TextXAlignment.Left
 
 local CloseBtn = Instance.new("TextButton", TitleBar)
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -192,7 +204,6 @@ CloseBtn.TextSize = 18
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.AutoButtonColor = false
 CloseBtn.ClipsDescendants = true
-
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 8)
 
 local MinimizeBtn = Instance.new("TextButton", TitleBar)
@@ -205,8 +216,15 @@ MinimizeBtn.TextSize = 18
 MinimizeBtn.Font = Enum.Font.GothamBold
 MinimizeBtn.AutoButtonColor = false
 MinimizeBtn.ClipsDescendants = true
-
 Instance.new("UICorner", MinimizeBtn).CornerRadius = UDim.new(0, 8)
+
+-- Drag Handle (визуальный индикатор)
+local DragHandle = Instance.new("Frame", TitleBar)
+DragHandle.Size = UDim2.new(0, 50, 0, 4)
+DragHandle.Position = UDim2.new(0.5, -25, 1, -6)
+DragHandle.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+DragHandle.BorderSizePixel = 0
+Instance.new("UICorner", DragHandle).CornerRadius = UDim.new(1, 0)
 
 local Sidebar = Instance.new("Frame", MainFrame)
 Sidebar.Size = UDim2.new(0, 160, 1, -45)
@@ -232,9 +250,9 @@ ToggleBtn.Visible = false
 ToggleBtn.Active = true
 ToggleBtn.Draggable = true
 ToggleBtn.ClipsDescendants = true
-
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
+-- Применяем перетаскивание
 MakeDraggable(TitleBar, MainFrame)
 MakeDraggable(ToggleBtn, ToggleBtn)
 
@@ -265,7 +283,6 @@ local function CreateTab(name)
     TabBtn.Text = ""
     TabBtn.AutoButtonColor = false
     TabBtn.ClipsDescendants = true
-    
     Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 8)
     
     local Indicator = Instance.new("Frame", TabBtn)
@@ -274,7 +291,6 @@ local function CreateTab(name)
     Indicator.BackgroundColor3 = Config.Theme.Accent
     Indicator.Visible = false
     Indicator.BorderSizePixel = 0
-    
     Instance.new("UICorner", Indicator).CornerRadius = UDim.new(0, 2)
     
     local TabText = Instance.new("TextLabel", TabBtn)
@@ -352,7 +368,6 @@ local function CreateTab(name)
             Btn.Font = Enum.Font.Gotham
             Btn.AutoButtonColor = false
             Btn.ClipsDescendants = true
-            
             Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
             
             Btn.MouseButton1Click:Connect(function(x, y)
@@ -380,7 +395,6 @@ local function CreateTab(name)
             ToggleFrame.BackgroundColor3 = Config.Theme.Secondary
             ToggleFrame.BorderSizePixel = 0
             ToggleFrame.ClipsDescendants = true
-            
             Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 8)
             
             local ToggleText = Instance.new("TextLabel", ToggleFrame)
@@ -400,7 +414,6 @@ local function CreateTab(name)
             Switch.Text = ""
             Switch.AutoButtonColor = false
             Switch.ClipsDescendants = true
-            
             Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
             
             local Circle = Instance.new("Frame", Switch)
@@ -408,7 +421,6 @@ local function CreateTab(name)
             Circle.Position = default and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
             Circle.BackgroundColor3 = Config.Theme.Background
             Circle.BorderSizePixel = 0
-            
             Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
             
             local Value = default
@@ -440,12 +452,11 @@ local function CreateTab(name)
             }
         end,
         
-        AddSlider = function(self, text, min, max, default, callback)
+        AddSlider = function(self, text, min, max, default, callback, useFloat)
             local SliderFrame = Instance.new("Frame", Content)
             SliderFrame.Size = UDim2.new(1, 0, 0, 60)
             SliderFrame.BackgroundColor3 = Config.Theme.Secondary
             SliderFrame.BorderSizePixel = 0
-            
             Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 8)
             
             local SliderText = Instance.new("TextLabel", SliderFrame)
@@ -459,8 +470,8 @@ local function CreateTab(name)
             SliderText.TextXAlignment = Enum.TextXAlignment.Left
             
             local ValueLabel = Instance.new("TextLabel", SliderFrame)
-            ValueLabel.Size = UDim2.new(0, 40, 0, 25)
-            ValueLabel.Position = UDim2.new(1, -55, 0, 5)
+            ValueLabel.Size = UDim2.new(0, 50, 0, 25)
+            ValueLabel.Position = UDim2.new(1, -60, 0, 5)
             ValueLabel.BackgroundTransparency = 1
             ValueLabel.Text = tostring(default)
             ValueLabel.TextColor3 = Config.Theme.Text
@@ -472,14 +483,12 @@ local function CreateTab(name)
             SliderBg.Position = UDim2.new(0, 15, 0, 40)
             SliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
             SliderBg.BorderSizePixel = 0
-            
             Instance.new("UICorner", SliderBg).CornerRadius = UDim.new(1, 0)
             
             local Fill = Instance.new("Frame", SliderBg)
             Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
             Fill.BackgroundColor3 = Config.Theme.Text
             Fill.BorderSizePixel = 0
-            
             Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
             
             local Knob = Instance.new("Frame", SliderBg)
@@ -487,7 +496,6 @@ local function CreateTab(name)
             Knob.Position = UDim2.new((default - min) / (max - min), -8, 0, -5)
             Knob.BackgroundColor3 = Config.Theme.Text
             Knob.BorderSizePixel = 0
-            
             Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
             
             local Dragging = false
@@ -495,10 +503,10 @@ local function CreateTab(name)
             local function Update(input)
                 local sizeX = math.clamp((input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
                 local value = min + (max - min) * sizeX
-                if math.floor(value) == value then
+                if not useFloat then
                     value = math.floor(value)
                 else
-                    value = math.floor(value * 10) / 10
+                    value = math.floor(value * 100) / 100
                 end
                 
                 Tween(Fill, {Size = UDim2.new(sizeX, 0, 1, 0)}, 0.1)
@@ -511,20 +519,23 @@ local function CreateTab(name)
             end
             
             SliderBg.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+                   input.UserInputType == Enum.UserInputType.Touch then
                     Dragging = true
                     Update(input)
                 end
             end)
             
             UserInputService.InputChanged:Connect(function(input)
-                if Dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                if Dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
+                                input.UserInputType == Enum.UserInputType.Touch) then
                     Update(input)
                 end
             end)
             
             UserInputService.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+                   input.UserInputType == Enum.UserInputType.Touch then
                     Dragging = false
                 end
             end)
@@ -546,7 +557,6 @@ local function CreateTab(name)
             BoxFrame.Size = UDim2.new(1, 0, 0, 70)
             BoxFrame.BackgroundColor3 = Config.Theme.Secondary
             BoxFrame.BorderSizePixel = 0
-            
             Instance.new("UICorner", BoxFrame).CornerRadius = UDim.new(0, 8)
             
             local Label = Instance.new("TextLabel", BoxFrame)
@@ -570,7 +580,6 @@ local function CreateTab(name)
             TextBox.TextSize = 14
             TextBox.Font = Enum.Font.Gotham
             TextBox.ClearTextOnFocus = false
-            
             Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 6)
             
             TextBox.FocusLost:Connect(function(enterPressed)
@@ -588,7 +597,6 @@ local function CreateTab(name)
             DropdownFrame.BackgroundColor3 = Config.Theme.Secondary
             DropdownFrame.BorderSizePixel = 0
             DropdownFrame.ClipsDescendants = true
-            
             Instance.new("UICorner", DropdownFrame).CornerRadius = UDim.new(0, 8)
             
             local DropdownBtn = Instance.new("TextButton", DropdownFrame)
@@ -636,7 +644,6 @@ local function CreateTab(name)
                 OptionBtn.Font = Enum.Font.Gotham
                 OptionBtn.AutoButtonColor = false
                 OptionBtn.ClipsDescendants = true
-                
                 Instance.new("UICorner", OptionBtn).CornerRadius = UDim.new(0, 6)
                 
                 OptionBtn.MouseEnter:Connect(function()
@@ -651,7 +658,6 @@ local function CreateTab(name)
                     local mousePos = UserInputService:GetMouseLocation()
                     local btnPos = OptionBtn.AbsolutePosition
                     Ripple(OptionBtn, mousePos.X - btnPos.X, mousePos.Y - btnPos.Y)
-                    
                     Label.Text = text .. ": " .. option
                     if callback then callback(option) end
                     DropdownBtn:Fire()
@@ -736,7 +742,7 @@ Tween(MainFrame, {Size = Config.Size}, 0.5, Enum.EasingStyle.Back, Enum.EasingDi
 print("Loading Herkle Hub -- Booga Booga Reborn")
 print("-----------------------------------------")
 
---// Game Logic Variables
+--// Game Logic (весь оригинальный функционал)
 local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local root = char:WaitForChild("HumanoidRootPart")
 local hum = char:WaitForChild("Humanoid")
@@ -747,7 +753,7 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
     hum = char:WaitForChild("Humanoid")
 end)
 
---// Encoding Functions
+-- Encoding Functions
 local function decode(str)
     local b1, b2, b3 = string.byte(str, -4, -2)
     return b1 + b2 * 256 + b3 * 65536
@@ -771,13 +777,6 @@ local function pickupencode(entityid)
     return string.char(0x00, 0xD5, b1, b2, b3, 0x00)
 end
 
-local function toggledoorencode(entityid)
-    local b1 = entityid % 256
-    local b2 = math.floor(entityid / 256) % 256
-    local b3 = math.floor(entityid / 65536) % 256
-    return string.char(0x00, 0x07, b1, b2, b3, 0x00)
-end
-
 local function interactstructureencode(entityid, itemid)
     local b1 = entityid % 256
     local b2 = math.floor(entityid / 256) % 256
@@ -796,8 +795,6 @@ local function run(stringg, packett, itemid)
         packet = pickupencode(id)
     elseif packett == "interactstructure" then
         packet = interactstructureencode(id, typeof(itemid) == "number" and itemid or nil)
-    elseif packett == "toggledoor" then
-        packet = toggledoorencode(id)
     end
     ReplicatedStorage:WaitForChild("ByteNetReliable"):FireServer(buffer.fromstring(packet))
 end
@@ -805,7 +802,6 @@ end
 local function drop(itemname)
     local inventory = LocalPlayer.PlayerGui.MainGui.RightPanel.Inventory:FindFirstChild("List")
     if not inventory then return end
-
     for _, child in ipairs(inventory:GetChildren()) do
         if child:IsA("ImageLabel") and child.Name == itemname then
             if packets and packets.DropBagItem and packets.DropBagItem.send then
@@ -815,7 +811,7 @@ local function drop(itemname)
     end
 end
 
---// UI Creation
+--// UI Tabs Setup
 local MainTab = CreateTab("Main")
 local CombatTab = CreateTab("Combat")
 local MapTab = CreateTab("Map")
@@ -823,47 +819,39 @@ local PickupTab = CreateTab("Pickup")
 local FarmingTab = CreateTab("Farming")
 local ExtraTab = CreateTab("Extra")
 
---// Main Tab
+-- Main Tab
 MainTab:AddToggle("Walkspeed", false, function(v) States.Walkspeed = v end)
 MainTab:AddSlider("Walkspeed Value", 1, 35, 16, function(v) States.WalkspeedValue = v end)
 MainTab:AddToggle("JumpPower", false, function(v) States.JumpPower = v end)
 MainTab:AddSlider("JumpPower Value", 1, 65, 50, function(v) States.JumpPowerValue = v end)
 MainTab:AddToggle("HipHeight", false, function(v) States.HipHeight = v end)
-MainTab:AddSlider("HipHeight Value", 0.1, 6.5, 2, function(v) States.HipHeightValue = v end)
+MainTab:AddSlider("HipHeight Value", 0.1, 6.5, 2, function(v) States.HipHeightValue = v end, true)
 MainTab:AddToggle("No Mountain Slip", false, function(v) States.NoMountainSlip = v end)
+MainTab:AddButton("Copy Job ID", function() setclipboard(game.JobId) end)
+MainTab:AddButton("Copy HWID", function() setclipboard(game:GetService("RbxAnalyticsService"):GetClientId()) end)
+MainTab:AddButton("Copy SID", function() setclipboard(game:GetService("RbxAnalyticsService"):GetSessionId()) end)
 
-MainTab:AddButton("Copy Job ID", function()
-    setclipboard(game.JobId)
-end)
-MainTab:AddButton("Copy HWID", function()
-    setclipboard(game:GetService("RbxAnalyticsService"):GetClientId())
-end)
-MainTab:AddButton("Copy SID", function()
-    setclipboard(game:GetService("RbxAnalyticsService"):GetSessionId())
-end)
-
---// Combat Tab
+-- Combat Tab
 CombatTab:AddToggle("Kill Aura", false, function(v) States.KillAura = v end)
 CombatTab:AddSlider("Kill Aura Range", 1, 9, 5, function(v) States.KillAuraRange = v end)
 CombatTab:AddDropdown("Max Targets", {"1", "2", "3", "4", "5", "6"}, function(v) States.KillAuraTargets = tonumber(v) end)
-CombatTab:AddSlider("Attack Cooldown", 0.01, 1.01, 0.1, function(v) States.KillAuraCooldown = v end)
+CombatTab:AddSlider("Attack Cooldown", 0.01, 1.01, 0.1, function(v) States.KillAuraCooldown = v end, true)
 
---// Map Tab
+-- Map Tab
 MapTab:AddToggle("Resource Aura", false, function(v) States.ResourceAura = v end)
 MapTab:AddSlider("Resource Range", 1, 20, 20, function(v) States.ResourceAuraRange = v end)
 MapTab:AddDropdown("Resource Max Targets", {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"}, function(v) States.ResourceAuraTargets = tonumber(v) end)
-MapTab:AddSlider("Resource Cooldown", 0.01, 1.01, 0.1, function(v) States.ResourceAuraCooldown = v end)
+MapTab:AddSlider("Resource Cooldown", 0.01, 1.01, 0.1, function(v) States.ResourceAuraCooldown = v end, true)
 
 MapTab:AddToggle("Critter Aura", false, function(v) States.CritterAura = v end)
 MapTab:AddSlider("Critter Range", 1, 20, 20, function(v) States.CritterAuraRange = v end)
 MapTab:AddDropdown("Critter Max Targets", {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"}, function(v) States.CritterAuraTargets = tonumber(v) end)
-MapTab:AddSlider("Critter Cooldown", 0.01, 1.01, 0.1, function(v) States.CritterAuraCooldown = v end)
+MapTab:AddSlider("Critter Cooldown", 0.01, 1.01, 0.1, function(v) States.CritterAuraCooldown = v end, true)
 
---// Pickup Tab
+-- Pickup Tab
 PickupTab:AddToggle("Auto Pickup", false, function(v) States.AutoPickup = v end)
 PickupTab:AddToggle("Auto Pickup From Chests", false, function(v) States.ChestPickup = v end)
 PickupTab:AddSlider("Pickup Range", 1, 35, 20, function(v) States.PickupRange = v end)
-
 PickupTab:AddLabel("Items (comma separated):")
 local itemsBox = PickupTab:AddTextBox("Items", "Leaves, Log", function(text)
     States.SelectedItems = {}
@@ -871,17 +859,16 @@ local itemsBox = PickupTab:AddTextBox("Items", "Leaves, Log", function(text)
         table.insert(States.SelectedItems, item:match("^%s*(.-)%s*$"))
     end
 end)
-
 PickupTab:AddToggle("Auto Drop", false, function(v) States.AutoDrop = v end)
 PickupTab:AddDropdown("Drop Item", {"Bloodfruit", "Jelly", "Bluefruit", "Log", "Leaves", "Wood"}, function(v) States.DropItem = v end)
 PickupTab:AddToggle("Auto Drop Custom", false, function(v) States.AutoDropCustom = v end)
 PickupTab:AddTextBox("Custom Item", "Bloodfruit", function(v) States.DropItemCustom = v end)
 
---// Farming Tab
+-- Farming Tab
 FarmingTab:AddDropdown("Select Fruit", {"Bloodfruit", "Bluefruit", "Lemon", "Coconut", "Jelly", "Banana", "Orange", "Oddberry", "Berry", "Strangefruit", "Strawberry", "Sunfruit", "Pumpkin", "Prickly Pear", "Apple", "Barley", "Cloudberry", "Carrot"}, function(v) States.SelectedFruit = v end)
 FarmingTab:AddToggle("Auto Plant", false, function(v) States.AutoPlant = v end)
 FarmingTab:AddSlider("Plant Range", 1, 30, 30, function(v) States.PlantRange = v end)
-FarmingTab:AddSlider("Plant Delay", 0.01, 1, 0.1, function(v) States.PlantDelay = v end)
+FarmingTab:AddSlider("Plant Delay", 0.01, 1, 0.1, function(v) States.PlantDelay = v end, true)
 FarmingTab:AddToggle("Auto Harvest", false, function(v) States.AutoHarvest = v end)
 FarmingTab:AddSlider("Harvest Range", 1, 30, 30, function(v) States.HarvestRange = v end)
 
@@ -891,24 +878,15 @@ FarmingTab:AddToggle("Tween to Bush + Plant", false, function(v) States.TweenToB
 FarmingTab:AddSlider("Tween Range", 1, 250, 250, function(v) States.TweenRange = v end)
 
 FarmingTab:AddLabel("-- Place Structure --")
-FarmingTab:AddButton("Place 16x16 Plantboxes (256)", function()
-    placestructure(16)
-end)
-FarmingTab:AddButton("Place 15x15 Plantboxes (225)", function()
-    placestructure(15)
-end)
-FarmingTab:AddButton("Place 10x10 Plantboxes (100)", function()
-    placestructure(10)
-end)
-FarmingTab:AddButton("Place 5x5 Plantboxes (25)", function()
-    placestructure(5)
-end)
+FarmingTab:AddButton("Place 16x16 Plantboxes (256)", function() placestructure(16) end)
+FarmingTab:AddButton("Place 15x15 Plantboxes (225)", function() placestructure(15) end)
+FarmingTab:AddButton("Place 10x10 Plantboxes (100)", function() placestructure(10) end)
+FarmingTab:AddButton("Place 5x5 Plantboxes (25)", function() placestructure(5) end)
 
---// Extra Tab
+-- Extra Tab
 ExtraTab:AddButton("Infinite Yield", function()
     loadstring(game:HttpGet("https://raw.githubusercontent.com/decryp1/herklesiy/refs/heads/main/hiy"))()
 end)
-
 ExtraTab:AddLabel("-- Item Orbit (can break) --")
 ExtraTab:AddToggle("Item Orbit", false, function(v) States.ItemOrbit = v end)
 ExtraTab:AddSlider("Grab Range", 1, 50, 20, function(v) States.OrbitRange = v end)
@@ -916,36 +894,19 @@ ExtraTab:AddSlider("Orbit Radius", 0, 30, 10, function(v) States.OrbitRadius = v
 ExtraTab:AddSlider("Orbit Speed", 0, 10, 5, function(v) States.OrbitSpeed = v end)
 ExtraTab:AddSlider("Item Height", -3, 10, 3, function(v) States.ItemHeight = v end)
 
---// Logic Loops
-
--- Walkspeed/JumpPower/HipHeight
+--// Logic Loops (весь оригинальный функционал)
 RunService.RenderStepped:Connect(function()
     if hum then
-        if States.Walkspeed then
-            hum.WalkSpeed = States.WalkspeedValue
-        end
-        if States.JumpPower then
-            hum.JumpPower = States.JumpPowerValue
-        end
-        if States.HipHeight then
-            hum.HipHeight = States.HipHeightValue
-        end
-        if States.NoMountainSlip then
-            hum.MaxSlopeAngle = 90
-        else
-            hum.MaxSlopeAngle = 46
-        end
+        if States.Walkspeed then hum.WalkSpeed = States.WalkspeedValue end
+        if States.JumpPower then hum.JumpPower = States.JumpPowerValue end
+        if States.HipHeight then hum.HipHeight = States.HipHeightValue end
+        if States.NoMountainSlip then hum.MaxSlopeAngle = 90 else hum.MaxSlopeAngle = 46 end
     end
 end)
 
--- Kill Aura
 task.spawn(function()
     while true do
-        if not States.KillAura then
-            task.wait(0.1)
-            continue
-        end
-
+        if not States.KillAura then task.wait(0.1) continue end
         local targets = {}
         for _, player in pairs(Players:GetPlayers()) do
             if player ~= LocalPlayer then
@@ -962,7 +923,6 @@ task.spawn(function()
                 end
             end
         end
-
         if #targets > 0 then
             table.sort(targets, function(a, b) return a.dist < b.dist end)
             local selectedTargets = {}
@@ -971,31 +931,19 @@ task.spawn(function()
             end
             run(selectedTargets, "swing")
         end
-
         task.wait(States.KillAuraCooldown)
     end
 end)
 
--- Resource Aura
 task.spawn(function()
     while true do
-        if not States.ResourceAura then
-            task.wait(0.1)
-            continue
-        end
-
+        if not States.ResourceAura then task.wait(0.1) continue end
         local targets = {}
         local allresources = {}
-        
-        for _, r in pairs(workspace.Resources:GetChildren()) do
-            table.insert(allresources, r)
-        end
+        for _, r in pairs(workspace.Resources:GetChildren()) do table.insert(allresources, r) end
         for _, r in pairs(workspace:GetChildren()) do
-            if r:IsA("Model") and r.Name == "Gold Node" then
-                table.insert(allresources, r)
-            end
+            if r:IsA("Model") and r.Name == "Gold Node" then table.insert(allresources, r) end
         end
-
         for _, res in pairs(allresources) do
             if res:IsA("Model") and res:GetAttribute("EntityID") then
                 local eid = res:GetAttribute("EntityID")
@@ -1008,7 +956,6 @@ task.spawn(function()
                 end
             end
         end
-
         if #targets > 0 then
             table.sort(targets, function(a, b) return a.dist < b.dist end)
             local selectedTargets = {}
@@ -1017,19 +964,13 @@ task.spawn(function()
             end
             run(selectedTargets, "swing")
         end
-
         task.wait(States.ResourceAuraCooldown)
     end
 end)
 
--- Critter Aura
 task.spawn(function()
     while true do
-        if not States.CritterAura then
-            task.wait(0.1)
-            continue
-        end
-
+        if not States.CritterAura then task.wait(0.1) continue end
         local targets = {}
         for _, critter in pairs(workspace.Critters:GetChildren()) do
             if critter:IsA("Model") and critter:GetAttribute("EntityID") then
@@ -1043,7 +984,6 @@ task.spawn(function()
                 end
             end
         end
-
         if #targets > 0 then
             table.sort(targets, function(a, b) return a.dist < b.dist end)
             local selectedTargets = {}
@@ -1052,12 +992,10 @@ task.spawn(function()
             end
             run(selectedTargets, "swing")
         end
-
         task.wait(States.CritterAuraCooldown)
     end
 end)
 
--- Auto Pickup
 task.spawn(function()
     while true do
         if States.AutoPickup then
@@ -1073,7 +1011,6 @@ task.spawn(function()
                 end
             end
         end
-
         if States.ChestPickup then
             for _, chest in ipairs(workspace.Deployables:GetChildren()) do
                 if chest:IsA("Model") and chest:FindFirstChild("Contents") then
@@ -1091,30 +1028,26 @@ task.spawn(function()
                 end
             end
         end
-
         task.wait(0.01)
     end
 end)
 
--- Auto Drop
 local debounce = 0
-local cd = 0
 RunService.Heartbeat:Connect(function()
     if States.AutoDrop then
-        if tick() - debounce >= cd then
+        if tick() - debounce >= 0 then
             drop(States.DropItem)
             debounce = tick()
         end
     end
     if States.AutoDropCustom then
-        if tick() - debounce >= cd then
+        if tick() - debounce >= 0 then
             drop(States.DropItemCustom)
             debounce = tick()
         end
     end
 end)
 
--- Farming Logic
 local fruittoitemid = {
     Bloodfruit = 94, Bluefruit = 377, Lemon = 99, Coconut = 1,
     Jelly = 604, Banana = 606, Orange = 602, Oddberry = 32,
@@ -1172,18 +1105,12 @@ local function tween(target)
     tweening = tw
 end
 
--- Auto Plant
 task.spawn(function()
     while true do
-        if not States.AutoPlant then
-            task.wait(0.1)
-            continue
-        end
-
+        if not States.AutoPlant then task.wait(0.1) continue end
         local plantboxes = getpbs(States.PlantRange)
         table.sort(plantboxes, function(a, b) return a.dist < b.dist end)
         local itemID = fruittoitemid[States.SelectedFruit] or 94
-
         for _, box in ipairs(plantboxes) do
             if not box.deployable:FindFirstChild("Seed") then
                 run(box.entityid, "interactstructure", itemID)
@@ -1193,17 +1120,11 @@ task.spawn(function()
     end
 end)
 
--- Auto Harvest
 task.spawn(function()
     while true do
-        if not States.AutoHarvest then
-            task.wait(0.1)
-            continue
-        end
-        
+        if not States.AutoHarvest then task.wait(0.1) continue end
         local bushes = getbushes(States.HarvestRange, States.SelectedFruit)
         table.sort(bushes, function(a, b) return a.dist < b.dist end)
-        
         for _, bush in ipairs(bushes) do
             run(bush.entityid, "pickup")
         end
@@ -1211,7 +1132,6 @@ task.spawn(function()
     end
 end)
 
--- Tween Logic
 task.spawn(function()
     while true do
         if States.TweenToPlantBox then
@@ -1234,7 +1154,6 @@ task.spawn(function()
         if States.TweenToBush then
             local bushes = getbushes(States.TweenRange, States.SelectedFruit)
             table.sort(bushes, function(a, b) return a.dist < b.dist end)
-            
             if #bushes > 0 then
                 for _, bush in ipairs(bushes) do
                     local target = bush.model.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
@@ -1257,15 +1176,12 @@ task.spawn(function()
     end
 end)
 
--- Place Structure
 function placestructure(gridsize)
     if not LocalPlayer or not LocalPlayer.Character then return end
     local torso = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not torso then return end
-
     local startpos = torso.Position - Vector3.new(0, 3, 0)
     local spacing = 6.04
-
     for x = 0, gridsize - 1 do
         for z = 0, gridsize - 1 do
             task.wait(0.3)
@@ -1282,8 +1198,7 @@ function placestructure(gridsize)
     end
 end
 
--- Item Orbit
-local attacheditems, itemangles, lastpositions = {}, {}, {}
+local attacheditems, itemangles = {}, {}
 local itemsfolder = workspace:WaitForChild("Items")
 
 RunService.RenderStepped:Connect(function()
@@ -1291,10 +1206,8 @@ RunService.RenderStepped:Connect(function()
         for _, bp in pairs(attacheditems) do bp:Destroy() end
         table.clear(attacheditems)
         table.clear(itemangles)
-        table.clear(lastpositions)
         return
     end
-    
     local time = tick() * States.OrbitSpeed
     for item, bp in pairs(attacheditems) do
         if item then
@@ -1314,7 +1227,6 @@ task.spawn(function()
             local children = itemsfolder:GetChildren()
             local anglestep = (math.pi * 2) / math.max(#children, 1)
             local index = 0
-
             for _, item in pairs(children) do
                 local primary = item:IsA("BasePart") and item or item:IsA("Model") and item.PrimaryPart
                 if primary and (primary.Position - root.Position).Magnitude <= States.OrbitRange then
@@ -1326,19 +1238,15 @@ task.spawn(function()
                         bp.Parent = primary
                         attacheditems[primary] = bp
                         itemangles[primary] = index * anglestep
-                        lastpositions[primary] = primary.Position
                         index = index + 1
                     end
                 end
             end
-            
-            -- Cleanup items that are too far
             for item, bp in pairs(attacheditems) do
                 if item and (item.Position - root.Position).Magnitude > States.OrbitRange * 1.5 then
                     bp:Destroy()
                     attacheditems[item] = nil
                     itemangles[item] = nil
-                    lastpositions[item] = nil
                 end
             end
         end
