@@ -1,18 +1,41 @@
---// Status UI | Ripple Effect Edition
---// Click feedback animation
+--// Herkle Hub на Status UI | Ripple Edition
+--// Размер 600x400, название STATUS
 
-if getgenv().StatusUI_Loaded then return end
-getgenv().StatusUI_Loaded = true
+if getgenv().HerkleHub_Loaded then return end
+getgenv().HerkleHub_Loaded = true
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+local packets = require(ReplicatedStorage.Modules.Packets)
 
---// Config
+--// Переменные состояния
+local States = {
+    Walkspeed = false, WalkspeedValue = 16,
+    JumpPower = false, JumpPowerValue = 50,
+    HipHeight = false, HipHeightValue = 2,
+    NoMountainSlip = false,
+    KillAura = false, KillAuraRange = 5, KillAuraTargets = 1, KillAuraCooldown = 0.1,
+    ResourceAura = false, ResourceAuraRange = 20, ResourceAuraTargets = 1, ResourceAuraCooldown = 0.1,
+    CritterAura = false, CritterAuraRange = 20, CritterAuraTargets = 1, CritterAuraCooldown = 0.1,
+    AutoPickup = false, ChestPickup = false, PickupRange = 20,
+    SelectedItems = {"Leaves", "Log"},
+    AutoDrop = false, DropItem = "Bloodfruit",
+    AutoDropCustom = false, DropItemCustom = "Bloodfruit",
+    SelectedFruit = "Bloodfruit",
+    AutoPlant = false, PlantRange = 30, PlantDelay = 0.1,
+    AutoHarvest = false, HarvestRange = 30,
+    TweenToPlantBox = false, TweenToBush = false, TweenRange = 250,
+    ItemOrbit = false, OrbitRange = 20, OrbitRadius = 10, OrbitSpeed = 5, ItemHeight = 3
+}
+
+--// Config UI - ОРИГИНАЛЬНЫЙ РАЗМЕР 600x400
 local Config = {
     Title = "STATUS",
     Size = UDim2.new(0, 600, 0, 400),
@@ -27,6 +50,7 @@ local Config = {
     }
 }
 
+--// UI Helper Functions
 local function Tween(obj, props, duration, style, dir)
     style = style or Enum.EasingStyle.Quart
     dir = dir or Enum.EasingDirection.Out
@@ -36,7 +60,6 @@ local function Tween(obj, props, duration, style, dir)
     return tween
 end
 
---// Ripple Effect Function
 local function Ripple(button, x, y)
     spawn(function()
         local ripple = Instance.new("Frame")
@@ -62,6 +85,7 @@ local function Ripple(button, x, y)
     end)
 end
 
+--// Функция перетаскивания
 local function MakeDraggable(topbar, frame)
     local dragging, dragInput, dragStart, startPos
     topbar.InputBegan:Connect(function(input)
@@ -176,12 +200,12 @@ ToggleBtn.ClipsDescendants = true
 
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
+MakeDraggable(TitleBar, MainFrame)
+MakeDraggable(ToggleBtn, ToggleBtn)
+
 local Tabs = {}
 local ActiveTab = nil
 local Minimized = false
-
-MakeDraggable(TitleBar, MainFrame)
-MakeDraggable(ToggleBtn, ToggleBtn)
 
 local function ToggleUI()
     Minimized = not Minimized
@@ -242,7 +266,6 @@ local function CreateTab(name)
     
     local function Activate()
         if ActiveTab == Content then return end
-        
         if ActiveTab then ActiveTab.Visible = false end
         
         for _, tab in pairs(Tabs) do
@@ -293,16 +316,14 @@ local function CreateTab(name)
             Btn.TextSize = 14
             Btn.Font = Enum.Font.Gotham
             Btn.AutoButtonColor = false
-            Btn.ClipsDescendants = true  -- Важно для ripple эффекта
+            Btn.ClipsDescendants = true
             
             Instance.new("UICorner", Btn).CornerRadius = UDim.new(0, 8)
             
-            -- Ripple эффект при клике
             Btn.MouseButton1Click:Connect(function(x, y)
                 local mousePos = UserInputService:GetMouseLocation()
                 local buttonPos = Btn.AbsolutePosition
                 Ripple(Btn, mousePos.X - buttonPos.X, mousePos.Y - buttonPos.Y)
-                
                 if callback then 
                     local success, err = pcall(callback)
                     if not success then print("Error:", err) end
@@ -324,7 +345,6 @@ local function CreateTab(name)
             ToggleFrame.BackgroundColor3 = Config.Theme.Secondary
             ToggleFrame.BorderSizePixel = 0
             ToggleFrame.ClipsDescendants = true
-            
             Instance.new("UICorner", ToggleFrame).CornerRadius = UDim.new(0, 8)
             
             local ToggleText = Instance.new("TextLabel", ToggleFrame)
@@ -344,7 +364,6 @@ local function CreateTab(name)
             Switch.Text = ""
             Switch.AutoButtonColor = false
             Switch.ClipsDescendants = true
-            
             Instance.new("UICorner", Switch).CornerRadius = UDim.new(1, 0)
             
             local Circle = Instance.new("Frame", Switch)
@@ -352,15 +371,12 @@ local function CreateTab(name)
             Circle.Position = default and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
             Circle.BackgroundColor3 = Config.Theme.Background
             Circle.BorderSizePixel = 0
-            
             Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
             
             local Value = default
             
             Switch.MouseButton1Click:Connect(function()
-                -- Мини ripple для switch
                 Ripple(Switch, 22, 12)
-                
                 Value = not Value
                 local targetPos = Value and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
                 local targetColor = Value and Config.Theme.Text or Color3.fromRGB(60, 60, 60)
@@ -372,14 +388,25 @@ local function CreateTab(name)
                     pcall(function() callback(Value) end)
                 end
             end)
+            
+            return {
+                SetValue = function(v)
+                    Value = v
+                    local targetPos = Value and UDim2.new(1, -21, 0, 3) or UDim2.new(0, 3, 0, 3)
+                    local targetColor = Value and Config.Theme.Text or Color3.fromRGB(60, 60, 60)
+                    Circle.Position = targetPos
+                    Switch.BackgroundColor3 = targetColor
+                    if callback then callback(Value) end
+                end,
+                GetValue = function() return Value end
+            }
         end,
         
-        AddSlider = function(self, text, min, max, default, callback)
+        AddSlider = function(self, text, min, max, default, callback, useFloat)
             local SliderFrame = Instance.new("Frame", Content)
             SliderFrame.Size = UDim2.new(1, 0, 0, 60)
             SliderFrame.BackgroundColor3 = Config.Theme.Secondary
             SliderFrame.BorderSizePixel = 0
-            
             Instance.new("UICorner", SliderFrame).CornerRadius = UDim.new(0, 8)
             
             local SliderText = Instance.new("TextLabel", SliderFrame)
@@ -393,8 +420,8 @@ local function CreateTab(name)
             SliderText.TextXAlignment = Enum.TextXAlignment.Left
             
             local ValueLabel = Instance.new("TextLabel", SliderFrame)
-            ValueLabel.Size = UDim2.new(0, 40, 0, 25)
-            ValueLabel.Position = UDim2.new(1, -55, 0, 5)
+            ValueLabel.Size = UDim2.new(0, 50, 0, 25)
+            ValueLabel.Position = UDim2.new(1, -60, 0, 5)
             ValueLabel.BackgroundTransparency = 1
             ValueLabel.Text = tostring(default)
             ValueLabel.TextColor3 = Config.Theme.Text
@@ -406,14 +433,12 @@ local function CreateTab(name)
             SliderBg.Position = UDim2.new(0, 15, 0, 40)
             SliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
             SliderBg.BorderSizePixel = 0
-            
             Instance.new("UICorner", SliderBg).CornerRadius = UDim.new(1, 0)
             
             local Fill = Instance.new("Frame", SliderBg)
             Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
             Fill.BackgroundColor3 = Config.Theme.Text
             Fill.BorderSizePixel = 0
-            
             Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
             
             local Knob = Instance.new("Frame", SliderBg)
@@ -421,14 +446,18 @@ local function CreateTab(name)
             Knob.Position = UDim2.new((default - min) / (max - min), -8, 0, -5)
             Knob.BackgroundColor3 = Config.Theme.Text
             Knob.BorderSizePixel = 0
-            
             Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
             
             local Dragging = false
             
             local function Update(input)
                 local sizeX = math.clamp((input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
-                local value = math.floor(min + (max - min) * sizeX)
+                local value = min + (max - min) * sizeX
+                if not useFloat then
+                    value = math.floor(value)
+                else
+                    value = math.floor(value * 100) / 100
+                end
                 
                 Tween(Fill, {Size = UDim2.new(sizeX, 0, 1, 0)}, 0.1)
                 Tween(Knob, {Position = UDim2.new(sizeX, -8, 0, -5)}, 0.1)
@@ -457,6 +486,17 @@ local function CreateTab(name)
                     Dragging = false
                 end
             end)
+            
+            return {
+                SetValue = function(v)
+                    local clamped = math.clamp(v, min, max)
+                    local sizeX = (clamped - min) / (max - min)
+                    Fill.Size = UDim2.new(sizeX, 0, 1, 0)
+                    Knob.Position = UDim2.new(sizeX, -8, 0, -5)
+                    ValueLabel.Text = tostring(clamped)
+                    if callback then callback(clamped) end
+                end
+            }
         end,
         
         AddTextBox = function(self, text, placeholder, callback)
@@ -464,7 +504,6 @@ local function CreateTab(name)
             BoxFrame.Size = UDim2.new(1, 0, 0, 70)
             BoxFrame.BackgroundColor3 = Config.Theme.Secondary
             BoxFrame.BorderSizePixel = 0
-            
             Instance.new("UICorner", BoxFrame).CornerRadius = UDim.new(0, 8)
             
             local Label = Instance.new("TextLabel", BoxFrame)
@@ -488,14 +527,15 @@ local function CreateTab(name)
             TextBox.TextSize = 14
             TextBox.Font = Enum.Font.Gotham
             TextBox.ClearTextOnFocus = false
-            
             Instance.new("UICorner", TextBox).CornerRadius = UDim.new(0, 6)
             
             TextBox.FocusLost:Connect(function(enterPressed)
-                if callback and enterPressed then
+                if callback then
                     pcall(function() callback(TextBox.Text) end)
                 end
             end)
+            
+            return TextBox
         end,
         
         AddDropdown = function(self, text, options, callback)
@@ -504,7 +544,6 @@ local function CreateTab(name)
             DropdownFrame.BackgroundColor3 = Config.Theme.Secondary
             DropdownFrame.BorderSizePixel = 0
             DropdownFrame.ClipsDescendants = true
-            
             Instance.new("UICorner", DropdownFrame).CornerRadius = UDim.new(0, 8)
             
             local DropdownBtn = Instance.new("TextButton", DropdownFrame)
@@ -517,7 +556,7 @@ local function CreateTab(name)
             Label.Size = UDim2.new(1, -50, 1, 0)
             Label.Position = UDim2.new(0, 15, 0, 0)
             Label.BackgroundTransparency = 1
-            Label.Text = text
+            Label.Text = text .. ": " .. options[1]
             Label.TextColor3 = Config.Theme.Text
             Label.TextSize = 14
             Label.Font = Enum.Font.Gotham
@@ -580,6 +619,27 @@ local function CreateTab(name)
                 Tween(DropdownFrame, {Size = targetSize}, 0.3, Enum.EasingStyle.Quart)
                 Tween(Arrow, {Rotation = Opened and 180 or 0}, 0.3)
             end)
+            
+            return {
+                SetValue = function(val)
+                    if table.find(options, val) then
+                        Label.Text = text .. ": " .. val
+                        if callback then callback(val) end
+                    end
+                end
+            }
+        end,
+        
+        AddLabel = function(self, text)
+            local Label = Instance.new("TextLabel", Content)
+            Label.Size = UDim2.new(1, 0, 0, 30)
+            Label.BackgroundTransparency = 1
+            Label.Text = text
+            Label.TextColor3 = Config.Theme.SubText
+            Label.TextSize = 12
+            Label.Font = Enum.Font.Gotham
+            Label.TextXAlignment = Enum.TextXAlignment.Left
+            return Label
         end
     }
     
@@ -588,7 +648,7 @@ local function CreateTab(name)
     return TabData
 end
 
--- Event Handlers с ripple
+--// Event Handlers
 CloseBtn.MouseEnter:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
 CloseBtn.MouseLeave:Connect(function() Tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(60, 60, 60)}, 0.2) end)
 CloseBtn.MouseButton1Click:Connect(function()
@@ -599,7 +659,7 @@ CloseBtn.MouseButton1Click:Connect(function()
     Tween(MainFrame, {Size = UDim2.new(0, 0, 0, 0)}, 0.3)
     wait(0.3)
     ScreenGui:Destroy()
-    getgenv().StatusUI_Loaded = false
+    getgenv().HerkleHub_Loaded = false
 end)
 
 MinimizeBtn.MouseEnter:Connect(function() Tween(MinimizeBtn, {BackgroundColor3 = Color3.fromRGB(80, 80, 80)}, 0.2) end)
@@ -628,13 +688,519 @@ end)
 MainFrame.Visible = true
 Tween(MainFrame, {Size = Config.Size}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 
--- Return
-local Status = { CreateTab = CreateTab, Toggle = ToggleUI }
+print("Loading Herkle Hub -- Booga Booga Reborn")
+print("-----------------------------------------")
 
--- Example
-local Main = CreateTab("Main")
-Main:AddButton("Test Button", function() print("Clicked!") end)
-Main:AddToggle("Test Toggle", false, function(v) print(v) end)
-Main:AddSlider("Test Slider", 0, 100, 50, function(v) print(v) end)
+--// Game Logic
+local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local root = char:WaitForChild("HumanoidRootPart")
+local hum = char:WaitForChild("Humanoid")
 
-return Status
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    char = newChar
+    root = char:WaitForChild("HumanoidRootPart")
+    hum = char:WaitForChild("Humanoid")
+end)
+
+-- Encoding Functions
+local function decode(str)
+    local b1, b2, b3 = string.byte(str, -4, -2)
+    return b1 + b2 * 256 + b3 * 65536
+end
+
+local function swingencode(ids)
+    if typeof(ids) ~= "table" then ids = {ids} end
+    local count = #ids
+    local out = {string.char(0x00, 0x11, count, 0x00)}
+    for i = 1, count do
+        local num = ids[i]
+        out[#out + 1] = string.char(num % 256, math.floor(num / 256) % 256, math.floor(num / 65536) % 256, 0x00)
+    end
+    return table.concat(out)
+end
+
+local function pickupencode(entityid)
+    local b1 = entityid % 256
+    local b2 = math.floor(entityid / 256) % 256
+    local b3 = math.floor(entityid / 65536) % 256
+    return string.char(0x00, 0xD5, b1, b2, b3, 0x00)
+end
+
+local function interactstructureencode(entityid, itemid)
+    local b1 = entityid % 256
+    local b2 = math.floor(entityid / 256) % 256
+    local b3 = math.floor(entityid / 65536) % 256
+    local i1 = itemid % 256
+    local i2 = math.floor(itemid / 256) % 256
+    return string.char(0x00, 0xC9, b1, b2, b3, 0x00, i1, i2)
+end
+
+local function run(stringg, packett, itemid)
+    local id = typeof(stringg) == "string" and decode(stringg) or stringg
+    local packet
+    if packett == "swing" then
+        packet = swingencode(id)
+    elseif packett == "pickup" then
+        packet = pickupencode(id)
+    elseif packett == "interactstructure" then
+        packet = interactstructureencode(id, typeof(itemid) == "number" and itemid or nil)
+    end
+    ReplicatedStorage:WaitForChild("ByteNetReliable"):FireServer(buffer.fromstring(packet))
+end
+
+local function drop(itemname)
+    local inventory = LocalPlayer.PlayerGui.MainGui.RightPanel.Inventory:FindFirstChild("List")
+    if not inventory then return end
+    for _, child in ipairs(inventory:GetChildren()) do
+        if child:IsA("ImageLabel") and child.Name == itemname then
+            if packets and packets.DropBagItem and packets.DropBagItem.send then
+                packets.DropBagItem.send(child.LayoutOrder)
+            end
+        end
+    end
+end
+
+--// UI Tabs Setup
+local MainTab = CreateTab("Main")
+local CombatTab = CreateTab("Combat")
+local MapTab = CreateTab("Map")
+local PickupTab = CreateTab("Pickup")
+local FarmingTab = CreateTab("Farming")
+local ExtraTab = CreateTab("Extra")
+
+-- Main Tab
+MainTab:AddToggle("Walkspeed", false, function(v) States.Walkspeed = v end)
+MainTab:AddSlider("Walkspeed Value", 1, 35, 16, function(v) States.WalkspeedValue = v end)
+MainTab:AddToggle("JumpPower", false, function(v) States.JumpPower = v end)
+MainTab:AddSlider("JumpPower Value", 1, 65, 50, function(v) States.JumpPowerValue = v end)
+MainTab:AddToggle("HipHeight", false, function(v) States.HipHeight = v end)
+MainTab:AddSlider("HipHeight Value", 0.1, 6.5, 2, function(v) States.HipHeightValue = v end, true)
+MainTab:AddToggle("No Mountain Slip", false, function(v) States.NoMountainSlip = v end)
+MainTab:AddButton("Copy Job ID", function() setclipboard(game.JobId) end)
+MainTab:AddButton("Copy HWID", function() setclipboard(game:GetService("RbxAnalyticsService"):GetClientId()) end)
+MainTab:AddButton("Copy SID", function() setclipboard(game:GetService("RbxAnalyticsService"):GetSessionId()) end)
+
+-- Combat Tab
+CombatTab:AddToggle("Kill Aura", false, function(v) States.KillAura = v end)
+CombatTab:AddSlider("Kill Aura Range", 1, 9, 5, function(v) States.KillAuraRange = v end)
+CombatTab:AddDropdown("Max Targets", {"1", "2", "3", "4", "5", "6"}, function(v) States.KillAuraTargets = tonumber(v) end)
+CombatTab:AddSlider("Attack Cooldown", 0.01, 1.01, 0.1, function(v) States.KillAuraCooldown = v end, true)
+
+-- Map Tab
+MapTab:AddToggle("Resource Aura", false, function(v) States.ResourceAura = v end)
+MapTab:AddSlider("Resource Range", 1, 20, 20, function(v) States.ResourceAuraRange = v end)
+MapTab:AddDropdown("Resource Max Targets", {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"}, function(v) States.ResourceAuraTargets = tonumber(v) end)
+MapTab:AddSlider("Resource Cooldown", 0.01, 1.01, 0.1, function(v) States.ResourceAuraCooldown = v end, true)
+
+MapTab:AddToggle("Critter Aura", false, function(v) States.CritterAura = v end)
+MapTab:AddSlider("Critter Range", 1, 20, 20, function(v) States.CritterAuraRange = v end)
+MapTab:AddDropdown("Critter Max Targets", {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"}, function(v) States.CritterAuraTargets = tonumber(v) end)
+MapTab:AddSlider("Critter Cooldown", 0.01, 1.01, 0.1, function(v) States.CritterAuraCooldown = v end, true)
+
+-- Pickup Tab
+PickupTab:AddToggle("Auto Pickup", false, function(v) States.AutoPickup = v end)
+PickupTab:AddToggle("Auto Pickup From Chests", false, function(v) States.ChestPickup = v end)
+PickupTab:AddSlider("Pickup Range", 1, 35, 20, function(v) States.PickupRange = v end)
+PickupTab:AddLabel("Items (comma separated):")
+local itemsBox = PickupTab:AddTextBox("Items", "Leaves, Log", function(text)
+    States.SelectedItems = {}
+    for item in text:gmatch("([^,]+)") do
+        table.insert(States.SelectedItems, item:match("^%s*(.-)%s*$"))
+    end
+end)
+PickupTab:AddToggle("Auto Drop", false, function(v) States.AutoDrop = v end)
+PickupTab:AddDropdown("Drop Item", {"Bloodfruit", "Jelly", "Bluefruit", "Log", "Leaves", "Wood"}, function(v) States.DropItem = v end)
+PickupTab:AddToggle("Auto Drop Custom", false, function(v) States.AutoDropCustom = v end)
+PickupTab:AddTextBox("Custom Item", "Bloodfruit", function(v) States.DropItemCustom = v end)
+
+-- Farming Tab
+FarmingTab:AddDropdown("Select Fruit", {"Bloodfruit", "Bluefruit", "Lemon", "Coconut", "Jelly", "Banana", "Orange", "Oddberry", "Berry", "Strangefruit", "Strawberry", "Sunfruit", "Pumpkin", "Prickly Pear", "Apple", "Barley", "Cloudberry", "Carrot"}, function(v) States.SelectedFruit = v end)
+FarmingTab:AddToggle("Auto Plant", false, function(v) States.AutoPlant = v end)
+FarmingTab:AddSlider("Plant Range", 1, 30, 30, function(v) States.PlantRange = v end)
+FarmingTab:AddSlider("Plant Delay", 0.01, 1, 0.1, function(v) States.PlantDelay = v end, true)
+FarmingTab:AddToggle("Auto Harvest", false, function(v) States.AutoHarvest = v end)
+FarmingTab:AddSlider("Harvest Range", 1, 30, 30, function(v) States.HarvestRange = v end)
+
+FarmingTab:AddLabel("-- Tween Settings --")
+FarmingTab:AddToggle("Tween to Plant Box", false, function(v) States.TweenToPlantBox = v end)
+FarmingTab:AddToggle("Tween to Bush + Plant", false, function(v) States.TweenToBush = v end)
+FarmingTab:AddSlider("Tween Range", 1, 250, 250, function(v) States.TweenRange = v end)
+
+FarmingTab:AddLabel("-- Place Structure --")
+FarmingTab:AddButton("Place 16x16 Plantboxes (256)", function() placestructure(16) end)
+FarmingTab:AddButton("Place 15x15 Plantboxes (225)", function() placestructure(15) end)
+FarmingTab:AddButton("Place 10x10 Plantboxes (100)", function() placestructure(10) end)
+FarmingTab:AddButton("Place 5x5 Plantboxes (25)", function() placestructure(5) end)
+
+-- Extra Tab
+ExtraTab:AddButton("Infinite Yield", function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/decryp1/herklesiy/refs/heads/main/hiy"))()
+end)
+ExtraTab:AddLabel("-- Item Orbit (can break) --")
+ExtraTab:AddToggle("Item Orbit", false, function(v) States.ItemOrbit = v end)
+ExtraTab:AddSlider("Grab Range", 1, 50, 20, function(v) States.OrbitRange = v end)
+ExtraTab:AddSlider("Orbit Radius", 0, 30, 10, function(v) States.OrbitRadius = v end)
+ExtraTab:AddSlider("Orbit Speed", 0, 10, 5, function(v) States.OrbitSpeed = v end)
+ExtraTab:AddSlider("Item Height", -3, 10, 3, function(v) States.ItemHeight = v end)
+
+--// Logic Loops
+RunService.RenderStepped:Connect(function()
+    if hum then
+        if States.Walkspeed then hum.WalkSpeed = States.WalkspeedValue end
+        if States.JumpPower then hum.JumpPower = States.JumpPowerValue end
+        if States.HipHeight then hum.HipHeight = States.HipHeightValue end
+        if States.NoMountainSlip then hum.MaxSlopeAngle = 90 else hum.MaxSlopeAngle = 46 end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if not States.KillAura then task.wait(0.1) continue end
+        local targets = {}
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local playerfolder = workspace.Players:FindFirstChild(player.Name)
+                if playerfolder then
+                    local rootpart = playerfolder:FindFirstChild("HumanoidRootPart")
+                    local entityid = playerfolder:GetAttribute("EntityID")
+                    if rootpart and entityid then
+                        local dist = (rootpart.Position - root.Position).Magnitude
+                        if dist <= States.KillAuraRange then
+                            table.insert(targets, {eid = entityid, dist = dist})
+                        end
+                    end
+                end
+            end
+        end
+        if #targets > 0 then
+            table.sort(targets, function(a, b) return a.dist < b.dist end)
+            local selectedTargets = {}
+            for i = 1, math.min(States.KillAuraTargets, #targets) do
+                table.insert(selectedTargets, targets[i].eid)
+            end
+            run(selectedTargets, "swing")
+        end
+        task.wait(States.KillAuraCooldown)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if not States.ResourceAura then task.wait(0.1) continue end
+        local targets = {}
+        local allresources = {}
+        for _, r in pairs(workspace.Resources:GetChildren()) do table.insert(allresources, r) end
+        for _, r in pairs(workspace:GetChildren()) do
+            if r:IsA("Model") and r.Name == "Gold Node" then table.insert(allresources, r) end
+        end
+        for _, res in pairs(allresources) do
+            if res:IsA("Model") and res:GetAttribute("EntityID") then
+                local eid = res:GetAttribute("EntityID")
+                local ppart = res.PrimaryPart or res:FindFirstChildWhichIsA("BasePart")
+                if ppart then
+                    local dist = (ppart.Position - root.Position).Magnitude
+                    if dist <= States.ResourceAuraRange then
+                        table.insert(targets, {eid = eid, dist = dist})
+                    end
+                end
+            end
+        end
+        if #targets > 0 then
+            table.sort(targets, function(a, b) return a.dist < b.dist end)
+            local selectedTargets = {}
+            for i = 1, math.min(States.ResourceAuraTargets, #targets) do
+                table.insert(selectedTargets, targets[i].eid)
+            end
+            run(selectedTargets, "swing")
+        end
+        task.wait(States.ResourceAuraCooldown)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if not States.CritterAura then task.wait(0.1) continue end
+        local targets = {}
+        for _, critter in pairs(workspace.Critters:GetChildren()) do
+            if critter:IsA("Model") and critter:GetAttribute("EntityID") then
+                local eid = critter:GetAttribute("EntityID")
+                local ppart = critter.PrimaryPart or critter:FindFirstChildWhichIsA("BasePart")
+                if ppart then
+                    local dist = (ppart.Position - root.Position).Magnitude
+                    if dist <= States.CritterAuraRange then
+                        table.insert(targets, {eid = eid, dist = dist})
+                    end
+                end
+            end
+        end
+        if #targets > 0 then
+            table.sort(targets, function(a, b) return a.dist < b.dist end)
+            local selectedTargets = {}
+            for i = 1, math.min(States.CritterAuraTargets, #targets) do
+                table.insert(selectedTargets, targets[i].eid)
+            end
+            run(selectedTargets, "swing")
+        end
+        task.wait(States.CritterAuraCooldown)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if States.AutoPickup then
+            for _, item in ipairs(workspace.Items:GetChildren()) do
+                if item:IsA("BasePart") or item:IsA("MeshPart") then
+                    local entityid = item:GetAttribute("EntityID")
+                    if entityid and table.find(States.SelectedItems, item.Name) then
+                        local dist = (item.Position - root.Position).Magnitude
+                        if dist <= States.PickupRange then
+                            run(entityid, "pickup")
+                        end
+                    end
+                end
+            end
+        end
+        if States.ChestPickup then
+            for _, chest in ipairs(workspace.Deployables:GetChildren()) do
+                if chest:IsA("Model") and chest:FindFirstChild("Contents") then
+                    for _, item in ipairs(chest.Contents:GetChildren()) do
+                        if item:IsA("BasePart") or item:IsA("MeshPart") then
+                            local entityid = item:GetAttribute("EntityID")
+                            if entityid and table.find(States.SelectedItems, item.Name) then
+                                local dist = (chest.PrimaryPart.Position - root.Position).Magnitude
+                                if dist <= States.PickupRange then
+                                    run(entityid, "pickup")
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(0.01)
+    end
+end)
+
+local debounce = 0
+RunService.Heartbeat:Connect(function()
+    if States.AutoDrop then
+        if tick() - debounce >= 0 then
+            drop(States.DropItem)
+            debounce = tick()
+        end
+    end
+    if States.AutoDropCustom then
+        if tick() - debounce >= 0 then
+            drop(States.DropItemCustom)
+            debounce = tick()
+        end
+    end
+end)
+
+local fruittoitemid = {
+    Bloodfruit = 94, Bluefruit = 377, Lemon = 99, Coconut = 1,
+    Jelly = 604, Banana = 606, Orange = 602, Oddberry = 32,
+    Berry = 35, Strangefruit = 302, Strawberry = 282, Sunfruit = 128,
+    Pumpkin = 80, ["Prickly Pear"] = 378, Apple = 243,
+    Barley = 247, Cloudberry = 101, Carrot = 147
+}
+
+local function getpbs(range)
+    local plantboxes = {}
+    for _, deployable in ipairs(workspace.Deployables:GetChildren()) do
+        if deployable:IsA("Model") and deployable.Name == "Plant Box" then
+            local entityid = deployable:GetAttribute("EntityID")
+            local ppart = deployable.PrimaryPart or deployable:FindFirstChildWhichIsA("BasePart")
+            if entityid and ppart then
+                local dist = (ppart.Position - root.Position).Magnitude
+                if dist <= range then
+                    table.insert(plantboxes, {entityid = entityid, deployable = deployable, dist = dist})
+                end
+            end
+        end
+    end
+    return plantboxes
+end
+
+local function getbushes(range, fruitname)
+    local bushes = {}
+    for _, model in ipairs(workspace:GetChildren()) do
+        if model:IsA("Model") and model.Name:find(fruitname) then
+            local ppart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+            if ppart then
+                local dist = (ppart.Position - root.Position).Magnitude
+                if dist <= range then
+                    local entityid = model:GetAttribute("EntityID")
+                    if entityid then
+                        table.insert(bushes, {entityid = entityid, model = model, dist = dist})
+                    end
+                end
+            end
+        end
+    end
+    return bushes
+end
+
+local tspmo = game:GetService("TweenService")
+local tweening = nil
+
+local function tween(target)
+    if tweening then tweening:Cancel() end
+    local distance = (root.Position - target.Position).Magnitude
+    local duration = distance / 21
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local tw = tspmo:Create(root, tweenInfo, {CFrame = target})
+    tw:Play()
+    tweening = tw
+end
+
+task.spawn(function()
+    while true do
+        if not States.AutoPlant then task.wait(0.1) continue end
+        local plantboxes = getpbs(States.PlantRange)
+        table.sort(plantboxes, function(a, b) return a.dist < b.dist end)
+        local itemID = fruittoitemid[States.SelectedFruit] or 94
+        for _, box in ipairs(plantboxes) do
+            if not box.deployable:FindFirstChild("Seed") then
+                run(box.entityid, "interactstructure", itemID)
+            end
+        end
+        task.wait(States.PlantDelay)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if not States.AutoHarvest then task.wait(0.1) continue end
+        local bushes = getbushes(States.HarvestRange, States.SelectedFruit)
+        table.sort(bushes, function(a, b) return a.dist < b.dist end)
+        for _, bush in ipairs(bushes) do
+            run(bush.entityid, "pickup")
+        end
+        task.wait(0.1)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if States.TweenToPlantBox then
+            local plantboxes = getpbs(States.TweenRange)
+            table.sort(plantboxes, function(a, b) return a.dist < b.dist end)
+            for _, box in ipairs(plantboxes) do
+                if not box.deployable:FindFirstChild("Seed") then
+                    local target = box.deployable.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+                    tween(target)
+                    break
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if States.TweenToBush then
+            local bushes = getbushes(States.TweenRange, States.SelectedFruit)
+            table.sort(bushes, function(a, b) return a.dist < b.dist end)
+            if #bushes > 0 then
+                for _, bush in ipairs(bushes) do
+                    local target = bush.model.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+                    tween(target)
+                    break
+                end
+            else
+                local plantboxes = getpbs(States.TweenRange)
+                table.sort(plantboxes, function(a, b) return a.dist < b.dist end)
+                for _, box in ipairs(plantboxes) do
+                    if not box.deployable:FindFirstChild("Seed") then
+                        local target = box.deployable.PrimaryPart.CFrame + Vector3.new(0, 5, 0)
+                        tween(target)
+                        break
+                    end
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+function placestructure(gridsize)
+    if not LocalPlayer or not LocalPlayer.Character then return end
+    local torso = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not torso then return end
+    local startpos = torso.Position - Vector3.new(0, 3, 0)
+    local spacing = 6.04
+    for x = 0, gridsize - 1 do
+        for z = 0, gridsize - 1 do
+            task.wait(0.3)
+            local position = startpos + Vector3.new(x * spacing, 0, z * spacing)
+            if packets.PlaceStructure and packets.PlaceStructure.send then
+                packets.PlaceStructure.send({
+                    ["buildingName"] = "Plant Box",
+                    ["yrot"] = 45,
+                    ["vec"] = position,
+                    ["isMobile"] = false
+                })
+            end
+        end
+    end
+end
+
+local attacheditems, itemangles = {}, {}
+local itemsfolder = workspace:WaitForChild("Items")
+
+RunService.RenderStepped:Connect(function()
+    if not States.ItemOrbit then
+        for _, bp in pairs(attacheditems) do bp:Destroy() end
+        table.clear(attacheditems)
+        table.clear(itemangles)
+        return
+    end
+    local time = tick() * States.OrbitSpeed
+    for item, bp in pairs(attacheditems) do
+        if item then
+            local angle = itemangles[item] + time
+            bp.Position = root.Position + Vector3.new(
+                math.cos(angle) * States.OrbitRadius, 
+                States.ItemHeight, 
+                math.sin(angle) * States.OrbitRadius
+            )
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if States.ItemOrbit then
+            local children = itemsfolder:GetChildren()
+            local anglestep = (math.pi * 2) / math.max(#children, 1)
+            local index = 0
+            for _, item in pairs(children) do
+                local primary = item:IsA("BasePart") and item or item:IsA("Model") and item.PrimaryPart
+                if primary and (primary.Position - root.Position).Magnitude <= States.OrbitRange then
+                    if not attacheditems[primary] then
+                        local bp = Instance.new("BodyPosition")
+                        bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                        bp.D = 1500
+                        bp.P = 25000
+                        bp.Parent = primary
+                        attacheditems[primary] = bp
+                        itemangles[primary] = index * anglestep
+                        index = index + 1
+                    end
+                end
+            end
+            for item, bp in pairs(attacheditems) do
+                if item and (item.Position - root.Position).Magnitude > States.OrbitRange * 1.5 then
+                    bp:Destroy()
+                    attacheditems[item] = nil
+                    itemangles[item] = nil
+                end
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+print("Done! Enjoy Herkle Hub on Ripple UI!")
