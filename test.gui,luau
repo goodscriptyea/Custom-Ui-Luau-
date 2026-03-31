@@ -1,4 +1,4 @@
--- Perfect GUI Library (One File, Luau)
+-- Perfect GUI Library with Tabs (One File, Luau)
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -403,6 +403,106 @@ function Slider:Destroy(): ()
 end
 
 -- ============================================
+-- TAB CLASS
+-- ============================================
+local Tab = {}
+Tab.__index = Tab
+
+function Tab.new(name: string, window: Window): Tab
+	local self = setmetatable({}, Tab) :: any
+	
+	self.name = name
+	self.window = window
+	self.content = nil :: Frame?
+	self.button = nil :: TextButton?
+	self.isActive = false
+	
+	return self
+end
+
+function Tab:_Create(tabsContainer: Frame): ()
+	local button = Instance.new("TextButton")
+	button.Name = self.name
+	button.Size = UDim2.new(0, 80, 0, 30)
+	button.BackgroundColor3 = CONFIG.SECONDARY_COLOR
+	button.TextColor3 = CONFIG.TEXT_COLOR
+	button.TextSize = 11
+	button.Font = Enum.Font.GothamBold
+	button.Text = self.name
+	button.BorderSizePixel = 0
+	button.Parent = tabsContainer
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 4)
+	btnCorner.Parent = button
+
+	local content = Instance.new("Frame")
+	content.Name = self.name .. "_Content"
+	content.Size = UDim2.new(1, 0, 1, -40)
+	content.Position = UDim2.new(0, 0, 0, 40)
+	content.BackgroundTransparency = 1
+	content.BorderSizePixel = 0
+	content.Visible = false
+	content.Parent = self.window.mainFrame
+
+	local uiListLayout = Instance.new("UIListLayout")
+	uiListLayout.Padding = UDim.new(0, 10)
+	uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	uiListLayout.Parent = content
+
+	local contentPadding = Instance.new("UIPadding")
+	contentPadding.PaddingLeft = UDim.new(0, 12)
+	contentPadding.PaddingRight = UDim.new(0, 12)
+	contentPadding.PaddingTop = UDim.new(0, 10)
+	contentPadding.PaddingBottom = UDim.new(0, 10)
+	contentPadding.Parent = content
+
+	local scrollFrame = Instance.new("ScrollingFrame")
+	scrollFrame.Size = UDim2.new(1, 0, 1, 0)
+	scrollFrame.BackgroundTransparency = 1
+	scrollFrame.BorderSizePixel = 0
+	scrollFrame.ScrollBarThickness = 8
+	scrollFrame.ScrollBarImageColor3 = CONFIG.ACCENT_COLOR
+	scrollFrame.Parent = content
+
+	local scrollLayout = Instance.new("UIListLayout")
+	scrollLayout.Padding = UDim.new(0, 10)
+	scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	scrollLayout.Parent = scrollFrame
+
+	local scrollPadding = Instance.new("UIPadding")
+	scrollPadding.PaddingLeft = UDim.new(0, 8)
+	scrollPadding.PaddingRight = UDim.new(0, 8)
+	scrollPadding.PaddingTop = UDim.new(0, 8)
+	scrollPadding.Parent = scrollFrame
+
+	button.MouseButton1Click:Connect(function()
+		self.window:_SelectTab(self)
+	end)
+
+	self.button = button
+	self.content = scrollFrame
+end
+
+function Tab:CreateButton(name: string, text: string, callback: (() -> ())?): Button
+	if not self.content then return nil :: any end
+	local btn = Button.new(name, text, self.content, callback)
+	return btn
+end
+
+function Tab:CreateToggle(name: string, label: string, defaultValue: boolean?, callback: ((boolean) -> ())?): Toggle
+	if not self.content then return nil :: any end
+	local toggle = Toggle.new(name, label, self.content, defaultValue, callback)
+	return toggle
+end
+
+function Tab:CreateSlider(name: string, label: string, minVal: number, maxVal: number, defaultVal: number, callback: ((number) -> ())?): Slider
+	if not self.content then return nil :: any end
+	local slider = Slider.new(name, label, self.content, minVal, maxVal, defaultVal, callback)
+	return slider
+end
+
+-- ============================================
 -- WINDOW CLASS
 -- ============================================
 local Window = {}
@@ -412,14 +512,16 @@ function Window.new(title: string, width: number?, height: number?): Window
 	local self = setmetatable({}, Window) :: any
 	
 	self.title = title
-	self.width = width or 320
-	self.height = height or 400
+	self.width = width or 350
+	self.height = height or 450
 	self.isOpen = true
 	self.mainGui = nil :: ScreenGui?
 	self.mainFrame = nil :: Frame?
 	self.content = nil :: Frame?
 	self.connections = {} :: {RBXScriptConnection}
 	self.elements = {} :: {Button | Toggle | Slider}
+	self.tabs = {} :: {Tab}
+	self.currentTab = nil :: Tab?
 	self.isDragging = false
 	self.dragOffset = Vector2.new(0, 0)
 	self.closed = Signal.new()
@@ -522,11 +624,34 @@ function Window:_Create(): ()
 		end
 	end))
 
-	-- Content
+	-- Tabs Bar
+	local tabsContainer = Instance.new("Frame")
+	tabsContainer.Name = "TabsContainer"
+	tabsContainer.Size = UDim2.new(1, 0, 0, 40)
+	tabsContainer.Position = UDim2.new(0, 0, 0, 35)
+	tabsContainer.BackgroundColor3 = CONFIG.SECONDARY_COLOR
+	tabsContainer.BorderSizePixel = 0
+	tabsContainer.Parent = mainFrame
+
+	local tabsLayout = Instance.new("UIListLayout")
+	tabsLayout.Padding = UDim.new(0, 5)
+	tabsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	tabsLayout.Parent = tabsContainer
+
+	local tabsPadding = Instance.new("UIPadding")
+	tabsPadding.PaddingLeft = UDim.new(0, 8)
+	tabsPadding.PaddingRight = UDim.new(0, 8)
+	tabsPadding.PaddingTop = UDim.new(0, 5)
+	tabsPadding.PaddingBottom = UDim.new(0, 5)
+	tabsPadding.Parent = tabsContainer
+
+	self.tabsContainer = tabsContainer
+
+	-- Content (for compatibility with non-tabs)
 	local content = Instance.new("Frame")
 	content.Name = "Content"
-	content.Size = UDim2.new(1, 0, 1, -35)
-	content.Position = UDim2.new(0, 0, 0, 35)
+	content.Size = UDim2.new(1, 0, 1, -75)
+	content.Position = UDim2.new(0, 0, 0, 75)
 	content.BackgroundTransparency = 1
 	content.BorderSizePixel = 0
 	content.Parent = mainFrame
@@ -563,6 +688,38 @@ function Window:_Create(): ()
 			mainFrame.Position = UDim2.new(0, newX, 0, newY)
 		end
 	end))
+end
+
+function Window:CreateTab(name: string): Tab
+	if not self.mainFrame or not self.mainFrame.Parent then return nil :: any end
+	
+	local tab = Tab.new(name, self)
+	tab:_Create(self.tabsContainer)
+	
+	table.insert(self.tabs, tab)
+	
+	if not self.currentTab then
+		self:_SelectTab(tab)
+	end
+	
+	return tab
+end
+
+function Window:_SelectTab(tab: Tab): ()
+	if self.currentTab then
+		self.currentTab.button.BackgroundColor3 = CONFIG.SECONDARY_COLOR
+		if self.currentTab.content then
+			self.currentTab.content.Visible = false
+		end
+		self.currentTab.isActive = false
+	end
+	
+	tab.button.BackgroundColor3 = CONFIG.ACCENT_COLOR
+	if tab.content then
+		tab.content.Visible = true
+	end
+	tab.isActive = true
+	self.currentTab = tab
 end
 
 function Window:CreateButton(name: string, text: string, callback: (() -> ())?): Button
@@ -608,6 +765,11 @@ function Window:_Cleanup(): ()
 	end
 	self.elements = {}
 	
+	for _, tab in ipairs(self.tabs) do
+		if tab.content then tab.content:Destroy() end
+	end
+	self.tabs = {}
+	
 	if self.mainGui then self.mainGui:Destroy() end
 	self.mainFrame = nil
 	self.mainGui = nil
@@ -616,49 +778,41 @@ end
 -- ============================================
 -- USAGE EXAMPLE
 -- ============================================
-local window = Window.new("Advanced GUI", 350, 450)
+local window = Window.new("Advanced GUI with Tabs", 350, 450)
 
--- Button with event
-local btn = window:CreateButton("TestBtn", "Click Me!", function()
+-- Create tabs
+local tab1 = window:CreateTab("Settings")
+local tab2 = window:CreateTab("Advanced")
+local tab3 = window:CreateTab("About")
+
+-- Tab 1: Settings
+tab1:CreateButton("TestBtn", "Click Me!", function()
 	print("Button clicked!")
 end)
 
-btn.clicked:Connect(function()
-	print("Event fired: Button clicked")
+local toggle1 = tab1:CreateToggle("Toggle1", "Enable Feature", true, function(value: boolean)
+	print("Toggle 1:", value)
 end)
 
--- Toggles with state preservation
-local toggle1 = window:CreateToggle("Toggle1", "Enable Feature", true, function(value: boolean)
-	print("Toggle 1 changed to:", value)
-end)
+local slider1 = tab1:CreateSlider("Volume", "Volume:", 0, 100, 50)
 
-toggle1.changed:Connect(function(newValue: boolean)
-	print("Event: Toggle1 =", newValue)
-end)
+-- Tab 2: Advanced
+local toggle2 = tab2:CreateToggle("Toggle2", "Advanced Mode", false)
+local slider2 = tab2:CreateSlider("Speed", "Speed:", 1, 20, 10)
 
-local toggle2 = window:CreateToggle("Toggle2", "Advanced Mode", false)
-
--- Sliders with debounce (only on release)
-local slider1 = window:CreateSlider("Volume", "Volume:", 0, 100, 50)
-
-slider1.released:Connect(function(value: number)
-	print("Slider released with value:", value)
-end)
-
-slider1.changed:Connect(function(value: number)
-	print("Slider changed to:", value)
-end)
-
-local slider2 = window:CreateSlider("Speed", "Speed:", 1, 20, 10)
-
--- Status button
-window:CreateButton("Status", "Get Status", function()
+tab2:CreateButton("Status", "Get Status", function()
 	print("\n=== Window State ===")
 	print("Toggle 1:", toggle1:GetValue())
 	print("Toggle 2:", toggle2:GetValue())
 	print("Volume:", slider1:GetValue())
 	print("Speed:", slider2:GetValue())
 	print("====================\n")
+end)
+
+-- Tab 3: About
+tab3:CreateButton("Info", "About this GUI", function()
+	print("Advanced GUI Library v1.0")
+	print("With Tabs, Buttons, Toggles, and Sliders!")
 end)
 
 -- Toggle GUI with F5
@@ -668,4 +822,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if window.isOpen then
 			window:Close()
 		else
-			window = Window*
+			window = Window.new("Advanced GUI with Tabs", 350, 450)
+		end
+	end
+end)
