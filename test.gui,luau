@@ -1,0 +1,671 @@
+-- Perfect GUI Library (One File, Luau)
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ============================================
+-- CONFIG
+-- ============================================
+local CONFIG = {
+	TOGGLE_KEY = Enum.KeyCode.F5,
+	MAIN_COLOR = Color3.fromRGB(25, 25, 35),
+	SECONDARY_COLOR = Color3.fromRGB(35, 35, 50),
+	ACCENT_COLOR = Color3.fromRGB(0, 150, 255),
+	ACCENT_HOVER = Color3.fromRGB(0, 180, 255),
+	TEXT_COLOR = Color3.fromRGB(240, 240, 245),
+	TEXT_MUTED = Color3.fromRGB(150, 150, 160),
+}
+
+-- ============================================
+-- SIGNAL CLASS (Event System)
+-- ============================================
+local Signal = {}
+Signal.__index = Signal
+
+function Signal.new(): Signal
+	local self = setmetatable({}, Signal) :: any
+	self._bindable = Instance.new("BindableEvent")
+	self._connections = {}
+	return self
+end
+
+function Signal:Connect(callback: (any) -> ()): RBXScriptConnection
+	local connection = self._bindable.Event:Connect(callback)
+	table.insert(self._connections, connection)
+	return connection
+end
+
+function Signal:Once(callback: (any) -> ()): RBXScriptConnection
+	local connection
+	connection = self._bindable.Event:Once(function(...: any)
+		callback(...)
+		connection:Disconnect()
+	end)
+	table.insert(self._connections, connection)
+	return connection
+end
+
+function Signal:Fire(...: any): ()
+	self._bindable:Fire(...)
+end
+
+function Signal:Destroy(): ()
+	for _, conn in ipairs(self._connections) do
+		if conn then conn:Disconnect() end
+	end
+	self._bindable:Destroy()
+end
+
+-- ============================================
+-- BUTTON CLASS
+-- ============================================
+local Button = {}
+Button.__index = Button
+
+function Button.new(name: string, text: string, parent: Frame, callback: (() -> ())?): Button
+	local self = setmetatable({}, Button) :: any
+	
+	self.name = name
+	self.text = text
+	self.parent = parent
+	self.callback = callback
+	self.clicked = Signal.new()
+	self.container = nil :: TextButton?
+	
+	self:_Create()
+	return self
+end
+
+function Button:_Create(): ()
+	local btn = Instance.new("TextButton")
+	btn.Name = self.name
+	btn.Size = UDim2.new(1, 0, 0, 32)
+	btn.BackgroundColor3 = CONFIG.ACCENT_COLOR
+	btn.TextColor3 = CONFIG.TEXT_COLOR
+	btn.TextSize = 12
+	btn.Font = Enum.Font.GothamBold
+	btn.Text = self.text
+	btn.BorderSizePixel = 0
+	btn.Parent = self.parent
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 6)
+	btnCorner.Parent = btn
+
+	self:_AddHoverEffect(btn)
+
+	btn.MouseButton1Click:Connect(function()
+		if not btn.Parent then return end
+		self.clicked:Fire()
+		if self.callback then self.callback() end
+	end)
+
+	self.container = btn
+end
+
+function Button:_AddHoverEffect(btn: TextButton): ()
+	local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	
+	btn.MouseEnter:Connect(function()
+		if not btn.Parent then return end
+		local tween = TweenService:Create(btn, tweenInfo, { BackgroundColor3 = CONFIG.ACCENT_HOVER })
+		tween:Play()
+		tween.Completed:Once(function() tween:Destroy() end)
+	end)
+	
+	btn.MouseLeave:Connect(function()
+		if not btn.Parent then return end
+		local tween = TweenService:Create(btn, tweenInfo, { BackgroundColor3 = CONFIG.ACCENT_COLOR })
+		tween:Play()
+		tween.Completed:Once(function() tween:Destroy() end)
+	end)
+end
+
+function Button:Destroy(): ()
+	self.clicked:Destroy()
+	if self.container then self.container:Destroy() end
+end
+
+-- ============================================
+-- TOGGLE CLASS
+-- ============================================
+local Toggle = {}
+Toggle.__index = Toggle
+
+function Toggle.new(name: string, label: string, parent: Frame, defaultValue: boolean?, callback: ((boolean) -> ())?): Toggle
+	local self = setmetatable({}, Toggle) :: any
+	
+	self.name = name
+	self.label = label
+	self.parent = parent
+	self.state = defaultValue or false
+	self.callback = callback
+	self.changed = Signal.new()
+	self.container = nil :: Frame?
+	self.checkbox = nil :: TextButton?
+	
+	self:_Create()
+	return self
+end
+
+function Toggle:_Create(): ()
+	local container = Instance.new("Frame")
+	container.Name = self.name
+	container.Size = UDim2.new(1, 0, 0, 28)
+	container.BackgroundColor3 = CONFIG.SECONDARY_COLOR
+	container.BorderSizePixel = 0
+	container.Parent = self.parent
+
+	local containerCorner = Instance.new("UICorner")
+	containerCorner.CornerRadius = UDim.new(0, 6)
+	containerCorner.Parent = container
+
+	local containerPadding = Instance.new("UIPadding")
+	containerPadding.PaddingLeft = UDim.new(0, 10)
+	containerPadding.PaddingRight = UDim.new(0, 10)
+	containerPadding.Parent = container
+
+	local checkbox = Instance.new("TextButton")
+	checkbox.Name = "Check"
+	checkbox.Size = UDim2.new(0, 18, 0, 18)
+	checkbox.Position = UDim2.new(0, 0, 0.5, -9)
+	checkbox.BackgroundColor3 = self.state and CONFIG.ACCENT_COLOR or CONFIG.MAIN_COLOR
+	checkbox.TextColor3 = CONFIG.TEXT_COLOR
+	checkbox.Text = self.state and "✓" or ""
+	checkbox.TextSize = 11
+	checkbox.Font = Enum.Font.GothamBold
+	checkbox.BorderColor3 = CONFIG.ACCENT_COLOR
+	checkbox.BorderSizePixel = 2
+	checkbox.Parent = container
+
+	local checkCorner = Instance.new("UICorner")
+	checkCorner.CornerRadius = UDim.new(0, 3)
+	checkCorner.Parent = checkbox
+
+	local labelText = Instance.new("TextLabel")
+	labelText.Size = UDim2.new(1, -28, 1, 0)
+	labelText.Position = UDim2.new(0, 28, 0, 0)
+	labelText.BackgroundTransparency = 1
+	labelText.TextColor3 = CONFIG.TEXT_COLOR
+	labelText.TextSize = 12
+	labelText.Font = Enum.Font.Gotham
+	labelText.Text = self.label
+	labelText.TextXAlignment = Enum.TextXAlignment.Left
+	labelText.Parent = container
+
+	checkbox.MouseButton1Click:Connect(function()
+		if not container.Parent then return end
+		self:SetValue(not self.state)
+	end)
+
+	self.container = container
+	self.checkbox = checkbox
+end
+
+function Toggle:SetValue(newValue: boolean): ()
+	if self.state == newValue then return end
+	
+	self.state = newValue
+	self.checkbox.Text = self.state and "✓" or ""
+	
+	local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local tween = TweenService:Create(
+		self.checkbox,
+		tweenInfo,
+		{ BackgroundColor3 = self.state and CONFIG.ACCENT_COLOR or CONFIG.MAIN_COLOR }
+	)
+	tween:Play()
+	tween.Completed:Once(function() tween:Destroy() end)
+	
+	self.changed:Fire(self.state)
+	if self.callback then self.callback(self.state) end
+end
+
+function Toggle:GetValue(): boolean
+	return self.state
+end
+
+function Toggle:Destroy(): ()
+	self.changed:Destroy()
+	if self.container then self.container:Destroy() end
+end
+
+-- ============================================
+-- SLIDER CLASS
+-- ============================================
+local Slider = {}
+Slider.__index = Slider
+
+function Slider.new(name: string, label: string, parent: Frame, minVal: number, maxVal: number, defaultVal: number, callback: ((number) -> ())?): Slider
+	local self = setmetatable({}, Slider) :: any
+	
+	self.name = name
+	self.label = label
+	self.parent = parent
+	self.minVal = minVal
+	self.maxVal = maxVal
+	self.value = defaultVal
+	self.callback = callback
+	self.changed = Signal.new()
+	self.released = Signal.new()
+	self.container = nil :: Frame?
+	self.dragging = false
+	self.renderConnection = nil :: RBXScriptConnection?
+	self.sliderFrame = nil :: Frame?
+	self.sliderButton = nil :: TextButton?
+	self.sliderFill = nil :: Frame?
+	self.valueLabel = nil :: TextLabel?
+	
+	self:_Create()
+	return self
+end
+
+function Slider:_Create(): ()
+	local container = Instance.new("Frame")
+	container.Name = self.name
+	container.Size = UDim2.new(1, 0, 0, 65)
+	container.BackgroundTransparency = 1
+	container.BorderSizePixel = 0
+	container.Parent = self.parent
+
+	local labelText = Instance.new("TextLabel")
+	labelText.Size = UDim2.new(1, 0, 0, 16)
+	labelText.BackgroundTransparency = 1
+	labelText.TextColor3 = CONFIG.TEXT_COLOR
+	labelText.TextSize = 11
+	labelText.Font = Enum.Font.GothamBold
+	labelText.Text = self.label
+	labelText.TextXAlignment = Enum.TextXAlignment.Left
+	labelText.Parent = container
+
+	local sliderFrame = Instance.new("Frame")
+	sliderFrame.Size = UDim2.new(1, 0, 0, 6)
+	sliderFrame.Position = UDim2.new(0, 0, 0, 20)
+	sliderFrame.BackgroundColor3 = CONFIG.SECONDARY_COLOR
+	sliderFrame.BorderSizePixel = 0
+	sliderFrame.Parent = container
+
+	local sliderCorner = Instance.new("UICorner")
+	sliderCorner.CornerRadius = UDim.new(0, 3)
+	sliderCorner.Parent = sliderFrame
+
+	local sliderFill = Instance.new("Frame")
+	sliderFill.Name = "Fill"
+	sliderFill.Size = UDim2.new(0, 0, 1, 0)
+	sliderFill.BackgroundColor3 = CONFIG.ACCENT_COLOR
+	sliderFill.BorderSizePixel = 0
+	sliderFill.Parent = sliderFrame
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0, 3)
+	fillCorner.Parent = sliderFill
+
+	local sliderButton = Instance.new("TextButton")
+	sliderButton.Name = "Slider"
+	sliderButton.Size = UDim2.new(0, 14, 0, 14)
+	sliderButton.Position = UDim2.new(0, -7, 0.5, -7)
+	sliderButton.BackgroundColor3 = CONFIG.ACCENT_COLOR
+	sliderButton.Text = ""
+	sliderButton.BorderSizePixel = 0
+	sliderButton.Parent = sliderFrame
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 7)
+	btnCorner.Parent = sliderButton
+
+	local valueLabel = Instance.new("TextLabel")
+	valueLabel.Size = UDim2.new(1, 0, 0, 16)
+	valueLabel.Position = UDim2.new(0, 0, 0, 32)
+	valueLabel.BackgroundTransparency = 1
+	valueLabel.TextColor3 = CONFIG.TEXT_MUTED
+	valueLabel.TextSize = 10
+	valueLabel.Font = Enum.Font.Gotham
+	valueLabel.Text = tostring(self.value)
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+	valueLabel.Parent = container
+
+	sliderButton.MouseButton1Down:Connect(function()
+		if not container.Parent then return end
+		self.dragging = true
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if self.dragging then
+				self.dragging = false
+				self.released:Fire(self.value)
+			end
+		end
+	end)
+
+	self.renderConnection = RunService.RenderStepped:Connect(function()
+		if not container.Parent then return end
+		
+		if self.dragging then
+			local mousePos = UserInputService:GetMouseLocation()
+			local relX = mousePos.X - sliderFrame.AbsolutePosition.X
+			local percent = math.clamp(relX / sliderFrame.AbsoluteSize.X, 0, 1)
+			local newValue = math.round(self.minVal + (self.maxVal - self.minVal) * percent)
+			
+			if newValue ~= self.value then
+				self.value = newValue
+				sliderButton.Position = UDim2.new(percent, -7, 0.5, -7)
+				sliderFill.Size = UDim2.new(percent, 0, 1, 0)
+				valueLabel.Text = tostring(self.value)
+				
+				self.changed:Fire(self.value)
+				if self.callback then self.callback(self.value) end
+			end
+		end
+	end)
+
+	self.container = container
+	self.sliderFrame = sliderFrame
+	self.sliderButton = sliderButton
+	self.sliderFill = sliderFill
+	self.valueLabel = valueLabel
+	self:_UpdateDisplay()
+end
+
+function Slider:_UpdateDisplay(): ()
+	if not self.container or not self.container.Parent then return end
+	
+	local percent = (self.value - self.minVal) / (self.maxVal - self.minVal)
+	
+	if self.sliderButton then self.sliderButton.Position = UDim2.new(percent, -7, 0.5, -7) end
+	if self.sliderFill then self.sliderFill.Size = UDim2.new(percent, 0, 1, 0) end
+	if self.valueLabel then self.valueLabel.Text = tostring(self.value) end
+end
+
+function Slider:SetValue(newValue: number): ()
+	newValue = math.clamp(newValue, self.minVal, self.maxVal)
+	if self.value == newValue then return end
+	
+	self.value = newValue
+	self:_UpdateDisplay()
+	self.changed:Fire(self.value)
+	if self.callback then self.callback(self.value) end
+end
+
+function Slider:GetValue(): number
+	return self.value
+end
+
+function Slider:Destroy(): ()
+	self.changed:Destroy()
+	self.released:Destroy()
+	if self.renderConnection then self.renderConnection:Disconnect() end
+	if self.container then self.container:Destroy() end
+end
+
+-- ============================================
+-- WINDOW CLASS
+-- ============================================
+local Window = {}
+Window.__index = Window
+
+function Window.new(title: string, width: number?, height: number?): Window
+	local self = setmetatable({}, Window) :: any
+	
+	self.title = title
+	self.width = width or 320
+	self.height = height or 400
+	self.isOpen = true
+	self.mainGui = nil :: ScreenGui?
+	self.mainFrame = nil :: Frame?
+	self.content = nil :: Frame?
+	self.connections = {} :: {RBXScriptConnection}
+	self.elements = {} :: {Button | Toggle | Slider}
+	self.isDragging = false
+	self.dragOffset = Vector2.new(0, 0)
+	self.closed = Signal.new()
+	
+	self:_Create()
+	return self
+end
+
+function Window:_Create(): ()
+	if self.mainGui then self.mainGui:Destroy() end
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "GuiWindow_" .. self.title
+	screenGui.ResetOnSpawn = false
+	screenGui.Parent = playerGui
+
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainFrame"
+	mainFrame.Size = UDim2.new(0, self.width, 0, self.height)
+	mainFrame.Position = UDim2.new(0.5, -self.width / 2, 0.5, -self.height / 2)
+	mainFrame.BackgroundColor3 = CONFIG.MAIN_COLOR
+	mainFrame.BorderColor3 = CONFIG.ACCENT_COLOR
+	mainFrame.BorderSizePixel = 2
+	mainFrame.Parent = screenGui
+
+	self.mainFrame = mainFrame
+	self.mainGui = screenGui
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = mainFrame
+
+	-- Title Bar
+	local titleBar = Instance.new("Frame")
+	titleBar.Name = "TitleBar"
+	titleBar.Size = UDim2.new(1, 0, 0, 35)
+	titleBar.BackgroundColor3 = CONFIG.ACCENT_COLOR
+	titleBar.BorderSizePixel = 0
+	titleBar.Parent = mainFrame
+
+	local titleCorner = Instance.new("UICorner")
+	titleCorner.CornerRadius = UDim.new(0, 8)
+	titleCorner.Parent = titleBar
+
+	local clipping = Instance.new("ClipDescendants")
+	clipping.Parent = titleBar
+
+	local titleText = Instance.new("TextLabel")
+	titleText.Size = UDim2.new(1, -70, 1, 0)
+	titleText.BackgroundTransparency = 1
+	titleText.TextColor3 = CONFIG.TEXT_COLOR
+	titleText.TextSize = 13
+	titleText.Font = Enum.Font.GothamBold
+	titleText.Text = self.title
+	titleText.TextXAlignment = Enum.TextXAlignment.Left
+	titleText.Parent = titleBar
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingLeft = UDim.new(0, 12)
+	padding.Parent = titleText
+
+	-- Close Button
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Name = "CloseBtn"
+	closeBtn.Size = UDim2.new(0, 30, 0, 30)
+	closeBtn.Position = UDim2.new(1, -35, 0.5, -15)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	closeBtn.TextColor3 = CONFIG.TEXT_COLOR
+	closeBtn.Text = "x"
+	closeBtn.TextSize = 18
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.BorderSizePixel = 0
+	closeBtn.Parent = titleBar
+
+	local closeCorner = Instance.new("UICorner")
+	closeCorner.CornerRadius = UDim.new(0, 4)
+	closeCorner.Parent = closeBtn
+
+	table.insert(self.connections, closeBtn.MouseButton1Click:Connect(function()
+		if not mainFrame.Parent then return end
+		self:Close()
+	end))
+
+	-- Dragging
+	table.insert(self.connections, titleBar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if self.isDragging then return end
+			self.isDragging = true
+			local mousePos = UserInputService:GetMouseLocation()
+			self.dragOffset = Vector2.new(
+				mousePos.X - mainFrame.AbsolutePosition.X,
+				mousePos.Y - mainFrame.AbsolutePosition.Y
+			)
+		end
+	end))
+
+	table.insert(self.connections, UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			self.isDragging = false
+		end
+	end))
+
+	-- Content
+	local content = Instance.new("Frame")
+	content.Name = "Content"
+	content.Size = UDim2.new(1, 0, 1, -35)
+	content.Position = UDim2.new(0, 0, 0, 35)
+	content.BackgroundTransparency = 1
+	content.BorderSizePixel = 0
+	content.Parent = mainFrame
+
+	local uiListLayout = Instance.new("UIListLayout")
+	uiListLayout.Padding = UDim.new(0, 10)
+	uiListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	uiListLayout.Parent = content
+
+	local contentPadding = Instance.new("UIPadding")
+	contentPadding.PaddingLeft = UDim.new(0, 12)
+	contentPadding.PaddingRight = UDim.new(0, 12)
+	contentPadding.PaddingTop = UDim.new(0, 10)
+	contentPadding.PaddingBottom = UDim.new(0, 10)
+	contentPadding.Parent = content
+
+	self.content = content
+
+	-- Main Loop
+	table.insert(self.connections, RunService.RenderStepped:Connect(function()
+		if not mainFrame.Parent then return end
+
+		if self.isDragging then
+			local mousePos = UserInputService:GetMouseLocation()
+			local newX = mousePos.X - self.dragOffset.X
+			local newY = mousePos.Y - self.dragOffset.Y
+			
+			local screenSize = mainFrame.Parent.AbsoluteSize
+			local frameSize = mainFrame.AbsoluteSize
+			
+			newX = math.clamp(newX, 0, screenSize.X - frameSize.X)
+			newY = math.clamp(newY, 0, screenSize.Y - frameSize.Y)
+			
+			mainFrame.Position = UDim2.new(0, newX, 0, newY)
+		end
+	end))
+end
+
+function Window:CreateButton(name: string, text: string, callback: (() -> ())?): Button
+	if not self.mainFrame or not self.mainFrame.Parent then return nil :: any end
+	local btn = Button.new(name, text, self.content :: Frame, callback)
+	table.insert(self.elements, btn)
+	return btn
+end
+
+function Window:CreateToggle(name: string, label: string, defaultValue: boolean?, callback: ((boolean) -> ())?): Toggle
+	if not self.mainFrame or not self.mainFrame.Parent then return nil :: any end
+	local toggle = Toggle.new(name, label, self.content :: Frame, defaultValue, callback)
+	table.insert(self.elements, toggle)
+	return toggle
+end
+
+function Window:CreateSlider(name: string, label: string, minVal: number, maxVal: number, defaultVal: number, callback: ((number) -> ())?): Slider
+	if not self.mainFrame or not self.mainFrame.Parent then return nil :: any end
+	local slider = Slider.new(name, label, self.content :: Frame, minVal, maxVal, defaultVal, callback)
+	table.insert(self.elements, slider)
+	return slider
+end
+
+function Window:Close(): ()
+	self.isOpen = false
+	self:_Cleanup()
+	self.closed:Fire()
+end
+
+function Window:Destroy(): ()
+	self:_Cleanup()
+	self.closed:Destroy()
+end
+
+function Window:_Cleanup(): ()
+	for _, conn in ipairs(self.connections) do
+		if conn then conn:Disconnect() end
+	end
+	self.connections = {}
+	
+	for _, elem in ipairs(self.elements) do
+		if elem and elem.Destroy then elem:Destroy() end
+	end
+	self.elements = {}
+	
+	if self.mainGui then self.mainGui:Destroy() end
+	self.mainFrame = nil
+	self.mainGui = nil
+end
+
+-- ============================================
+-- USAGE EXAMPLE
+-- ============================================
+local window = Window.new("Advanced GUI", 350, 450)
+
+-- Button with event
+local btn = window:CreateButton("TestBtn", "Click Me!", function()
+	print("Button clicked!")
+end)
+
+btn.clicked:Connect(function()
+	print("Event fired: Button clicked")
+end)
+
+-- Toggles with state preservation
+local toggle1 = window:CreateToggle("Toggle1", "Enable Feature", true, function(value: boolean)
+	print("Toggle 1 changed to:", value)
+end)
+
+toggle1.changed:Connect(function(newValue: boolean)
+	print("Event: Toggle1 =", newValue)
+end)
+
+local toggle2 = window:CreateToggle("Toggle2", "Advanced Mode", false)
+
+-- Sliders with debounce (only on release)
+local slider1 = window:CreateSlider("Volume", "Volume:", 0, 100, 50)
+
+slider1.released:Connect(function(value: number)
+	print("Slider released with value:", value)
+end)
+
+slider1.changed:Connect(function(value: number)
+	print("Slider changed to:", value)
+end)
+
+local slider2 = window:CreateSlider("Speed", "Speed:", 1, 20, 10)
+
+-- Status button
+window:CreateButton("Status", "Get Status", function()
+	print("\n=== Window State ===")
+	print("Toggle 1:", toggle1:GetValue())
+	print("Toggle 2:", toggle2:GetValue())
+	print("Volume:", slider1:GetValue())
+	print("Speed:", slider2:GetValue())
+	print("====================\n")
+end)
+
+-- Toggle GUI with F5
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == CONFIG.TOGGLE_KEY then
+		if window.isOpen then
+			window:Close()
+		else
+			window = Window*
